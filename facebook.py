@@ -56,7 +56,7 @@ def load_facebook(data_dir):
     return g
 
 def main():
-    pdb.set_trace()
+#    pdb.set_trace()
     path_to_data = os.path.join(*"data/egonets-Facebook/facebook".split("/"))
     fb_g = load_facebook(path_to_data)
     c = fb_g.community_edge_betweenness(directed=False)
