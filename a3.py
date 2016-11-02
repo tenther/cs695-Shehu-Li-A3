@@ -97,20 +97,39 @@ def greedy_clustering(graph, max_iterations=5000, min_delta=0.0):
     # start with each vertex in its own commuanity
     vc = VC(graph, [i for i, _ in enumerate(graph.vs)])
 
+#    pdb.set_trace()
+    # shortest_paths = graph.shortest_paths_dijkstra(mode=ig.ALL)
+
+    partition_vertexes = defaultdict(set)
+    for i, p in enumerate(vc.membership):
+        partition_vertexes[p].add(i)
+
+    partition_counts = dict()
+    for i, s in partition_vertexes.iteritems():
+        partition_counts[i] = len(s)
+
     for iteration in xrange(max_iterations):
         # Copy membership, just to avoid odd errors. May not be necessary.
         membership         = list(vc.membership)
         selected_vertex    = random.randint(0, len(membership) - 1)
-        new_communities    = set([i for i in membership if i != membership[selected_vertex]])
+#        new_communities    = set([i for i in membership if i != membership[selected_vertex]])
+        new_communities    = partition_counts.keys()
+        random.shuffle(new_communities)
         found_one          = False
+        found_community    = 0
         for new_community in new_communities:
             membership[selected_vertex] = new_community
             new_vc = VC(graph,membership)
             delta = new_vc.modularity - vc.modularity
             if delta > min_delta:
+                found_community = new_community
                 found_one = True
                 break
         if found_one:
+            partition_counts[vc.membership[selected_vertex]] -= 1
+            if not partition_counts[vc.membership[selected_vertex]]:
+                del(partition_counts[vc.membership[selected_vertex]])
+            partition_counts[found_community] += 1
             vc = new_vc
             print "Greedy clustering. iteration={0} modularity:={1} delta={2}".format(iteration, vc.modularity, delta)
         # else:
