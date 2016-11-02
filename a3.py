@@ -64,9 +64,8 @@ def load_facebook(data_dir, file_names=None):
         if i not in V:
             print "Adding missing vertex {0} to V".format(i)
             V.add(i)
-    g = ig.Graph()
-    g.add_vertices(list(V))
-    g.add_edges(list(E))
+    g = ig.Graph(n=len(V), edges=list(E))
+
     return g
 
 def load_wiki_vote(data_file_name):
@@ -92,25 +91,31 @@ def load_wiki_vote(data_file_name):
 load_collaboration = load_wiki_vote
 
 def main():
+#    pdb.set_trace()
+
     #  create path to data in a way that will work with Windows
     path_to_fb_data = os.path.join(*"data/egonets-Facebook/facebook".split("/"))
     fb_g = load_facebook(data_dir=path_to_fb_data)
 
     fb_eig_dend  = fb_g.community_leading_eigenvector()
     fb_walk_dend = fb_g.community_walktrap()
+    print fb_eig_dend.summary()
+    print fb_walk_dend.summary()
 
     #  create path to data in a way that will work with Windows
     wiki_vote_file_name = os.path.join(*"data/wiki-Vote/wiki-Vote.txt".split("/"))
     wv_g = load_wiki_vote(wiki_vote_file_name)
     wv_eig_dend  = wv_g.community_leading_eigenvector()
     wv_walk_dend = wv_g.community_walktrap()
-
-    pdb.set_trace()
+    print wv_eig_dend.summary()
+    print wv_walk_dend.summary()
 
     collaboration_file_name = os.path.join(*"data/ca-GrQc/ca-GrQc.txt".split("/"))
     co_g = load_collaboration(collaboration_file_name)
     co_eig_dend  = co_g.community_leading_eigenvector()
     co_walk_dend = co_g.community_walktrap()
+    print co_eig_dend.summary()
+    print co_walk_dend.summary()
 
     return
 
