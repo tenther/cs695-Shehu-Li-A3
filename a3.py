@@ -5,6 +5,8 @@ import os
 import pdb
 import re
 import functools
+from collections import defaultdict
+import random
 
 comments_re = re.compile(r'#.*')
 
@@ -90,32 +92,68 @@ def load_wiki_vote(data_file_name):
 # this file appears to be the same format as wikivote
 load_collaboration = load_wiki_vote
 
+def greedy_clustering(graph, max_iterations=5000, min_delta=0.0):
+    VC = ig.VertexClustering
+    # start with each vertex in its own commuanity
+    vc = VC(graph, [i for i, _ in enumerate(graph.vs)])
+
+    for iteration in xrange(max_iterations):
+        # Copy membership, just to avoid odd errors. May not be necessary.
+        membership         = list(vc.membership)
+        selected_vertex    = random.randint(0, len(membership) - 1)
+        new_communities    = set([i for i in membership if i != membership[selected_vertex]])
+        found_one          = False
+        for new_community in new_communities:
+            membership[selected_vertex] = new_community
+            new_vc = VC(graph,membership)
+            delta = new_vc.modularity - vc.modularity
+            if delta > min_delta:
+                found_one = True
+                break
+        if found_one:
+            vc = new_vc
+            print "Greedy clustering. iteration={0} modularity:={1} delta={2}".format(iteration, vc.modularity, delta)
+        # else:
+        #     print "Greedy clustering converged at {0} iterations.".format(iteration)
+        #     break
+    return vc
+
 def main():
-#    pdb.set_trace()
+
+
+    # algorithm_func = {
+    #     'eigenvector': (Graph.community_leading_eigenvector, None),
+    #     'walktrap':    (Graph.community_walktrap, Dendrogram.as_clusterin),
+    #     'greedy':      (greedy, None),
+
+    graphs = {}
+    clusters = defaultdict(dict)
 
     #  create path to data in a way that will work with Windows
     path_to_fb_data = os.path.join(*"data/egonets-Facebook/facebook".split("/"))
-    fb_g = load_facebook(data_dir=path_to_fb_data)
 
-    fb_eig_dend  = fb_g.community_leading_eigenvector()
-    fb_walk_dend = fb_g.community_walktrap()
-    print fb_eig_dend.summary()
-    print fb_walk_dend.summary()
+    graphs['facebook']                     = load_facebook(data_dir=path_to_fb_data)
+    clusters['facebook']['eigenvector'] = graphs['facebook'].community_leading_eigenvector()
+    clusters['facebook']['walktrap']    = graphs['facebook'].community_walktrap().as_clustering()
+    clusters['facebook']['greedy']      = greedy_clustering(graphs['facebook'])
 
-    #  create path to data in a way that will work with Windows
-    wiki_vote_file_name = os.path.join(*"data/wiki-Vote/wiki-Vote.txt".split("/"))
-    wv_g = load_wiki_vote(wiki_vote_file_name)
-    wv_eig_dend  = wv_g.community_leading_eigenvector()
-    wv_walk_dend = wv_g.community_walktrap()
-    print wv_eig_dend.summary()
-    print wv_walk_dend.summary()
+    wiki_vote_file_name                    = os.path.join(*"data/wiki-Vote/wiki-Vote.txt".split("/"))
+    graphs['wikivote']                     = load_wiki_vote(wiki_vote_file_name)
+    clusters['wikivote']['eigenvector'] = graphs['wikivote'].community_leading_eigenvector()
+    clusters['wikivote']['walktrap']    = graphs['wikivote'].community_walktrap().as_clustering()
 
-    collaboration_file_name = os.path.join(*"data/ca-GrQc/ca-GrQc.txt".split("/"))
-    co_g = load_collaboration(collaboration_file_name)
-    co_eig_dend  = co_g.community_leading_eigenvector()
-    co_walk_dend = co_g.community_walktrap()
-    print co_eig_dend.summary()
-    print co_walk_dend.summary()
+    collaboration_file_name              = os.path.join(*"data/ca-GrQc/ca-GrQc.txt".split("/"))
+    graphs['collab']                     = load_collaboration(collaboration_file_name)
+    clusters['collab']['eigenvector'] = graphs['collab'].community_leading_eigenvector()
+    clusters['collab']['walktrap']    = graphs['collab'].community_walktrap().as_clustering()
+
+    for dataset, graph in graphs.items():
+        print "Graph summary for dataset {0}: {1}".format(dataset, graph.summary())
+#        print "    modularity: {0}".format(graph.modularity())
+        for algorithm, cluster in clusters[dataset].items():
+            print "Clusters summary for dataset {0}.{1}: {2}".format(dataset, algorithm, cluster.summary())
+            print "    modularity: {0}".format(cluster.modularity)
+        print ""
 
     return
 
