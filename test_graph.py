@@ -2,6 +2,7 @@
 
 import pdb
 import igraph as ig
+import a3
 
 def main():
 
@@ -63,14 +64,13 @@ def main():
     clustering['eigenvector'] = g.community_leading_eigenvector()
     clustering['walktrap']    = g.community_walktrap().as_clustering()
     clustering['fixed']       = ig.VertexClustering(g, communities)
+    clustering['greed']       = a3.do_greedy_clustering(g)
 
     visual_style={}
     visual_style['vertex_label']=g.vs["name"]
     visual_style['bbox']=(600,600)
     visual_style['margin']=50
     visual_style['label_dist']=1
-
-#    pdb.set_trace()
 
     for name, clustering in sorted(clustering.items()):
         visual_style['vertex_color']=[community_color[i] for i in clustering.membership]
