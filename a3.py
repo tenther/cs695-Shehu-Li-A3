@@ -55,9 +55,9 @@ class ModularityMaintainer(object):
         if no_of_edges > 0:
             for i in range(no_of_comms):
                 tmp = a[i]/2.0/no_of_edges
-                modularity += e[i]/2.0/no_of_edges
-                modularity -= tmp*tmp
+                m[i] = e[i]/2.0/no_of_edges - tmp*tmp
 
+        modularity = sum(m)
         # make an adjacency list
         adj = defaultdict(set)
         for v1, v2 in edges:
@@ -72,6 +72,7 @@ class ModularityMaintainer(object):
         self.modularity  = modularity
         self.e           = e
         self.a           = a
+        self.m           = m
         self.adj         = adj
 
     def move_community(self, v, new_community):
@@ -83,14 +84,16 @@ class ModularityMaintainer(object):
         adj         = self.adj
         modularity  = self.modularity
 
+        if no_of_edges == 0:
+            return
+
         # Remove the effect this node had on previous modularity
         affected_comms = set([membership[v2] for v2 in adj[v]])
         affected_comms.add(membership[v])
-        if no_of_edges > 0:
-            for i in affected_comms:
-                tmp = a[i]/2.0/no_of_edges
-                modularity -= e[i]/2.0/no_of_edges
-                modularity += tmp*tmp
+        for i in affected_comms:
+            tmp = a[i]/2.0/no_of_edges
+            modularity -= e[i]/2.0/no_of_edges
+            modularity += tmp*tmp
 
         comms_to_change = set()
         # Update changes to vectors

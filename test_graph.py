@@ -34,6 +34,7 @@ def main():
     g.add_vertices(list(V))
     g.add_edges(list(E))
 
+    # Use this hand-made clustering definition for comparison to algorithm results
     fixed_community = {'a': 0,
                        'b': 0,
                        'c': 0,
@@ -47,30 +48,32 @@ def main():
                        'k': 2,
     }
     
-    community_color = ['purple', 'green', 'light blue', 'yellow', 
-                       'red', 'orange', 'pink', 'white', 
-                       'black', 'brown', 'gray',]
-
     communities = [0.0 for _ in range(len(g.vs))]
 
     for n, c in fixed_community.items():
         i = g.vs.select(name_eq=n)[0].index
         communities[i] = c
 
-    layout = g.layout_kamada_kawai()
-
+    # Apply clustering algorithms
     clustering = {}
     clustering['betweenness'] = g.community_edge_betweenness().as_clustering()
     clustering['eigenvector'] = g.community_leading_eigenvector()
     clustering['walktrap']    = g.community_walktrap().as_clustering()
     clustering['fixed']       = ig.VertexClustering(g, communities)
-    clustering['greed']       = a3.do_greedy_clustering(g)
+    clustering['greed']       = a3.do_greedy_clustering(g, tries=25)
 
+    # Display graphs
     visual_style={}
     visual_style['vertex_label']=g.vs["name"]
     visual_style['bbox']=(600,600)
     visual_style['margin']=50
     visual_style['label_dist']=1
+
+    layout = g.layout_kamada_kawai()
+
+    community_color = ['purple', 'green', 'light blue', 'yellow', 
+                       'red', 'orange', 'pink', 'white', 
+                       'black', 'brown', 'gray',]
 
     for name, clustering in sorted(clustering.items()):
         visual_style['vertex_color']=[community_color[i] for i in clustering.membership]
