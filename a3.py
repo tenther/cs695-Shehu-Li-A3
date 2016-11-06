@@ -142,63 +142,63 @@ class ModularityMaintainer(object):
         self.previous = None
 
 # Load one set of files 
-def load_facebook(data_dir, file_names=None):
-    data_file_path = functools.partial(os.path.join, data_dir)
-    if not file_names:
-        if not data_dir:
-            raise Exception("Must provide data_dir with file_names")
-        file_names = glob.glob(data_file_path("*.circles"))
+# def load_facebook(data_dir, file_names=None):
+#     data_file_path = functools.partial(os.path.join, data_dir)
+#     if not file_names:
+#         if not data_dir:
+#             raise Exception("Must provide data_dir with file_names")
+#         file_names = glob.glob(data_file_path("*.circles"))
 
-    # It seems to be faster to loaded vertices and edges into sets and
-    # create the graph with them all at once, instead of adding them
-    # to the graph as we go. Didn't rigorously check this though.
-    V = set()
-    E = set()
+#     # It seems to be faster to loaded vertices and edges into sets and
+#     # create the graph with them all at once, instead of adding them
+#     # to the graph as we go. Didn't rigorously check this though.
+#     V = set()
+#     E = set()
 
-    for circles_file_name in file_names:
-        # Add each id from a file name to the vertices
-        ego_id = int(circles_file_name.split('/')[-1].split('.')[0])
-        V.add(ego_id)
+#     for circles_file_name in file_names:
+#         # Add each id from a file name to the vertices
+#         ego_id = int(circles_file_name.split('/')[-1].split('.')[0])
+#         V.add(ego_id)
 
-        # Add vertices from feat file
-        feat_file_name = os.path.join(data_dir, "{0}.feat".format(ego_id))
-        with open(feat_file_name) as feat_file:
-            for line in feat_file:
-                fields = line.strip().split()
-                id = int(fields[0])
-                V.add(id)
+#         # Add vertices from feat file
+#         feat_file_name = os.path.join(data_dir, "{0}.feat".format(ego_id))
+#         with open(feat_file_name) as feat_file:
+#             for line in feat_file:
+#                 fields = line.strip().split()
+#                 id = int(fields[0])
+#                 V.add(id)
 
-        # Add edges
-        edge_file_name = os.path.join(data_dir, "{0}.edges".format(ego_id))
-        with open(edge_file_name) as edge_file:
-            for line in edge_file:
-                v1, v2 = [int(v) for v in line.strip().split()]
-                V.add(v1)
-                V.add(v2)
-                E.add((v1, v2))
+#         # Add edges
+#         edge_file_name = os.path.join(data_dir, "{0}.edges".format(ego_id))
+#         with open(edge_file_name) as edge_file:
+#             for line in edge_file:
+#                 v1, v2 = [int(v) for v in line.strip().split()]
+#                 V.add(v1)
+#                 V.add(v2)
+#                 E.add((v1, v2))
 
-                # make sure links are symmetrical
-#                E.add((v2, v1))
+#                 # make sure links are symmetrical
+#                 E.add((v2, v1))
 
-                # Links from primary vertex to others is implicit. E is a set, so we won't have dups.
-                E.add((ego_id, v1))
-                E.add((ego_id, v2))
+#                 # Links from primary vertex to others is implicit. E is a set, so we won't have dups.
+#                 E.add((ego_id, v1))
+#                 E.add((ego_id, v2))
 
-                # make sure links are symmetrical
-#                E.add((v1, ego_id))
-#                E.add((v2, ego_id))
+#                 # make sure links are symmetrical
+#                 E.add((v1, ego_id))
+#                 E.add((v2, ego_id))
 
 
-    # It seems igraph will make all vertices a contiguous range, even
-    # if there are gaps (which would cause the vertices and edges to
-    # get out of sync.) So add them in here and warn.
-    for i in xrange(max(V) + 1):
-        if i not in V:
-            print "Adding missing vertex {0} to V".format(i)
-            V.add(i)
-    g = ig.Graph(n=len(V), edges=list(E))
+#     # It seems igraph will make all vertices a contiguous range, even
+#     # if there are gaps (which would cause the vertices and edges to
+#     # get out of sync.) So add them in here and warn.
+#     for i in xrange(max(V) + 1):
+#         if i not in V:
+#             print "Adding missing vertex {0} to V".format(i)
+#             V.add(i)
+#     g = ig.Graph(n=len(V), edges=list(E))
 
-    return g
+#     return g
 
 def load_tsv_edges(data_file_name, directed=None):
 
@@ -283,6 +283,14 @@ def do_greedy_clustering(graph, tries=100, max_iterations=5000, min_delta=0.0, v
 #                                                                                                                                        mm_timer.total())
 #     return vc
 
+# Make communities indexed from 0
+def normalize_membership(membership):
+    communities = set(membership)
+    old_to_new = dict(zip(sorted(list(communities)),
+                          range(len(communities))))
+    return [old_to_new[x] for x in membership]
+    
+
 def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False):
     VC = ig.VertexClustering
     # start with each vertex in its own commuanity
@@ -328,9 +336,8 @@ def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False):
                 print "Greedy clustering. iteration={0} modularity:={1} delta={2}.".format(iteration, mm.modularity, mm.modularity - previous_modularity)
             previous_modularity = mm.modularity
     
-            #    pdb.set_trace()
     print "Finished greedy_clustering. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership)))
-    return VC(graph, list(mm.membership))
+    return VC(graph, list(normalize_membership(mm.membership)))
 
 def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False):
     VC = ig.VertexClustering
@@ -367,44 +374,62 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False)
             else:
                 mm.revert()
     
-            #    pdb.set_trace()
     print "Finished greedy_clustering2. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership)))
-    return VC(graph, list(mm.membership))
+    return VC(graph, list(normalize_membership(mm.membership)))
 
 def main():
+    dataset_file_name = {
+        'facebook': os.path.join(*"data/egonets-Facebook/facebook_combined.txt".split("/")),
+        'wikivote': os.path.join(*"data/wiki-Vote/wiki-Vote.txt".split("/")),
+        'collab':   os.path.join(*"data/ca-GrQc/ca-GrQc.txt".split("/")),
+    }
+
+    dataset_is_directed = {
+        'facebook':  False,
+        'wikivote':  True,
+        'collab':    True,
+    }
+
     algorithm_func = {
-        'eigenvector': (Graph.community_leading_eigenvector, None),
-        'walktrap':    (Graph.community_walktrap, Dendrogram.as_clustering),
-        'greedy':      (greedy, None),
+        'eigenvector': lambda g, kw: g.community_leading_eigenvector(),
+        'walktrap':    lambda g, kw: g.community_walktrap().as_clustering(),
+        'greedy-1':    lambda g, kw: greedy_clustering(g, **kw),
+        'greedy-2':    lambda g, kw: greedy_clustering2(g, **kw),
+    }
+
+    dataset_algorithm_params = defaultdict(lambda: defaultdict(dict))
+    dataset_algorithm_params['facebook']['greedy-1'] = dict(verbose=True, max_iterations=1000)
+    dataset_algorithm_params['facebook']['greedy-2'] = dict(verbose=True, max_iterations=100000)
+    dataset_algorithm_params['wikivote']['greedy-1'] = dict(verbose=True, max_iterations=1000)
+    dataset_algorithm_params['wikivote']['greedy-2'] = dict(verbose=True, max_iterations=100000)
+    dataset_algorithm_params['collab']['greedy-1']   = dict(verbose=True, max_iterations=1000)
+    dataset_algorithm_params['collab']['greedy-2']   = dict(verbose=True, max_iterations=100000)
+
+    datasets_to_skip = ['wikivote', 'collab']
 
     graphs = {}
     clusters = defaultdict(dict)
+    dataset_algorithm_time = defaultdict(dict)
 
-    #  create path to data in a way that will work with Windows
-#    path_to_fb_data = os.path.join(*"data/egonets-Facebook/facebook".split("/"))
-#    graphs['facebook']                     = load_facebook(data_dir=path_to_fb_data)
+#    pdb.set_trace()
 
-    fb_file_name = os.path.join(*"data/egonets-Facebook/facebook_combined.txt".split("/"))
-    graphs['facebook']                     = load_tsv_edges(fb_file_name, directed=False)
-    clusters['facebook']['eigenvector'] = graphs['facebook'].community_leading_eigenvector()
-    clusters['facebook']['walktrap']    = graphs['facebook'].community_walktrap().as_clustering()
-    clusters['facebook']['greedy']      = greedy_clustering2(graphs['facebook'], verbose=True, max_iterations=10000000)
-
-    wiki_vote_file_name                    = os.path.join(*"data/wiki-Vote/wiki-Vote.txt".split("/"))
-    graphs['wikivote']                     = load_tsv_edges(wiki_vote_file_name)
-    clusters['wikivote']['eigenvector'] = graphs['wikivote'].community_leading_eigenvector()
-    clusters['wikivote']['walktrap']    = graphs['wikivote'].community_walktrap().as_clustering()
-
-    collaboration_file_name              = os.path.join(*"data/ca-GrQc/ca-GrQc.txt".split("/"))
-    graphs['collab']                     = load_tsv_edges(collaboration_file_name)
-    clusters['collab']['eigenvector'] = graphs['collab'].community_leading_eigenvector()
-    clusters['collab']['walktrap']    = graphs['collab'].community_walktrap().as_clustering()
+    for dataset in dataset_file_name.keys():
+        if dataset in datasets_to_skip:
+            continue
+        graphs[dataset] = load_tsv_edges(dataset_file_name[dataset], directed=dataset_is_directed[dataset])
+        for algorithm, func in algorithm_func.items():
+            print "Doing {0} {1}".format(dataset, algorithm)
+            kw = dataset_algorithm_params[dataset][algorithm]
+            t0 = time.time()
+            clusters[dataset][algorithm] = func(graphs[dataset], kw)
+            dataset_algorithm_time[dataset][algorithm] = time.time() - t0
 
     for dataset, graph in graphs.items():
         print "Graph summary for dataset {0}: {1}".format(dataset, graph.summary())
         for algorithm, cluster in clusters[dataset].items():
             print "Clusters summary for dataset {0}.{1}: {2}".format(dataset, algorithm, cluster.summary())
             print "    modularity: {0}".format(cluster.modularity)
+            print "    time: {0}".format(dataset_algorithm_time[dataset][algorithm])
         print ""
 
     return
