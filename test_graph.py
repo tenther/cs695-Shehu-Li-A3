@@ -4,7 +4,7 @@ import pdb
 import igraph as ig
 import a3
 
-def main():
+def main(verbose=False):
 
     # Graph based on slide 44 of lecture notes 7
     V = set()
@@ -60,7 +60,8 @@ def main():
     clustering['eigenvector'] = g.community_leading_eigenvector()
     clustering['walktrap']    = g.community_walktrap().as_clustering()
     clustering['fixed']       = ig.VertexClustering(g, communities)
-    clustering['greed']       = a3.do_greedy_clustering(g, tries=25)
+    clustering['greedy']       = a3.do_greedy_clustering(g, tries=25, verbose=verbose)
+#    pdb.set_trace()
 
     # Display graphs
     visual_style={}

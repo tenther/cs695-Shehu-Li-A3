@@ -74,10 +74,12 @@ class ModularityMaintainer(object):
         self.a           = a
         self.m           = m
         self.adj         = adj
+        self.previous    = None
 
     def move_community(self, v, new_community):
         a = self.a
         e = self.e
+        m = self.m
         no_of_edges = self.no_of_edges
         no_of_comms = self.no_of_comms
         membership  = self.membership
@@ -87,45 +89,57 @@ class ModularityMaintainer(object):
         if no_of_edges == 0:
             return
 
-        # Remove the effect this node had on previous modularity
-        affected_comms = set([membership[v2] for v2 in adj[v]])
-        affected_comms.add(membership[v])
-        for i in affected_comms:
-            tmp = a[i]/2.0/no_of_edges
-            modularity -= e[i]/2.0/no_of_edges
-            modularity += tmp*tmp
+        # The e array tracks when both nodes of an edge are
+        # in the same community. Remove the effect of those.
+        # The a array tracks just the presence of a node
+        # in a community. Remove the effect for the node
+        # being changed.
+        #
+        # Likewise, add these values in for the new community.
 
-        comms_to_change = set()
-        # Update changes to vectors
         c1 = membership[v]
+
+        # Store previous from and to communities, and the prior a,e,m values.
+        self.previous = (v, c1, a[c1], e[c1], m[c1], new_community, a[new_community], e[new_community], m[new_community])
+
+        if c1 == new_community:
+            raise Exception("Moving node to it's current community ({0} -> {1}) will likely break move_community".format(c1, new_community))
+
         for v2 in adj[v]:
             c2 = membership[v2]
 
             if c1 == c2:
                 e[c1] -= 2.0
-                e[c2] -= 2.0
-            a[c1] -= 2.0
-            a[c2] -= 2.0
+            if c2 == new_community:
+                e[new_community] += 2.0
+            a[c1] -= 1.0
+            a[new_community] += 1.0
+
+        # m array is used to track modularity component
+        # of each community. Recalculate these for the
+        # affected commununities.
+        for i in [c1, new_community]:
+            tmp = a[i]/2.0/no_of_edges
+            m[i] = e[i]/2.0/no_of_edges - tmp*tmp
 
         membership[v] = new_community
 
-        c1 = membership[v]
-        for v2 in adj[v]:
-            c2 = membership[v2]
+        # Recalculate modularity
+        self.modularity = sum(m)
 
-            if c1 == c2:
-                e[c1] += 2.0
-                e[c2] += 2.0
-            a[c1] += 2.0
-            a[c2] += 2.0
-
-        affected_comms.add(c1)
-        if no_of_edges > 0:
-            for i in affected_comms:
-                tmp = a[i]/2.0/no_of_edges
-                modularity += e[i]/2.0/no_of_edges
-                modularity -= tmp*tmp
-        self.modularity = modularity
+    def revert(self):
+        if not self.previous:
+            raise Exception("No history to be reverted")
+        v, prev_c1, prev_a1, prev_e1, prev_m1, prev_c2, prev_a2, prev_e2, prev_m2 = self.previous
+        self.membership[v] = prev_c1
+        self.a[prev_c1] = prev_a1
+        self.e[prev_c1] = prev_e1
+        self.m[prev_c1] = prev_m1
+        self.a[prev_c2] = prev_a2
+        self.e[prev_c2] = prev_e2
+        self.m[prev_c2] = prev_m2
+        self.modularity = sum(self.m)
+        self.previous = None
 
 # Load one set of files 
 def load_facebook(data_dir, file_names=None):
@@ -134,7 +148,6 @@ def load_facebook(data_dir, file_names=None):
         if not data_dir:
             raise Exception("Must provide data_dir with file_names")
         file_names = glob.glob(data_file_path("*.circles"))
-
 
     # It seems to be faster to loaded vertices and edges into sets and
     # create the graph with them all at once, instead of adding them
@@ -165,15 +178,15 @@ def load_facebook(data_dir, file_names=None):
                 E.add((v1, v2))
 
                 # make sure links are symmetrical
-                E.add((v2, v1))
+#                E.add((v2, v1))
 
                 # Links from primary vertex to others is implicit. E is a set, so we won't have dups.
                 E.add((ego_id, v1))
                 E.add((ego_id, v2))
 
                 # make sure links are symmetrical
-                E.add((v1, ego_id))
-                E.add((v2, ego_id))
+#                E.add((v1, ego_id))
+#                E.add((v2, ego_id))
 
 
     # It seems igraph will make all vertices a contiguous range, even
@@ -214,64 +227,111 @@ def do_greedy_clustering(graph, tries=100, max_iterations=5000, min_delta=0.0, v
             best_vc = vc
     return vc
 
+# def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False):
+#     VC = ig.VertexClustering
+#     # start with each vertex in its own commuanity
+#     vc = VC(graph, [i for i, _ in enumerate(graph.vs)])
+
+#     mm = ModularityMaintainer(graph, vc.membership)
+
+#     vc_timer = Timer()
+#     mm_timer = Timer()
+
+#     partition_vertexes = defaultdict(set)
+#     for i, p in enumerate(vc.membership):
+#         partition_vertexes[p].add(i)
+
+#     partition_counts = dict()
+#     for i, s in partition_vertexes.iteritems():
+#         partition_counts[i] = len(s)
+
+#     for iteration in xrange(max_iterations):
+#         # Copy membership, just to avoid odd errors. May not be necessary.
+#         membership         = list(vc.membership)
+#         selected_vertex    = random.randint(0, len(membership) - 1)
+#         selected_community = membership[selected_vertex]
+
+#         new_communities    = [c for c in partition_counts.keys() if c != selected_community]
+#         random.shuffle(new_communities)
+#         found_one          = False
+#         found_community    = 0
+#         for new_community in new_communities:
+#             if new_community == selected_community:
+#                 continue
+#             mm_timer.timeit(lambda: mm.move_community(selected_vertex, new_community))
+#             membership[selected_vertex] = new_community
+#             new_vc = vc_timer.timeit(lambda:  VC(graph,membership))
+#             delta = new_vc.modularity - vc.modularity
+#             if delta > min_delta:
+#                 found_community = new_community
+#                 found_one = True
+#                 break
+#             else:
+#                 mm.revert()
+#         if found_one:
+#             partition_counts[vc.membership[selected_vertex]] -= 1
+#             if not partition_counts[vc.membership[selected_vertex]]:
+#                 del(partition_counts[vc.membership[selected_vertex]])
+#             partition_counts[found_community] += 1
+#             vc = new_vc
+#             if verbose:
+#                 print "Greedy clustering. iteration={0} modularity:={1} delta={2}. vc time={3}. mm modularity={4}. mm time={5}".format(iteration, 
+#                                                                                                                                        vc.modularity, 
+#                                                                                                                                        delta, 
+#                                                                                                                                        vc_timer.total(),
+#                                                                                                                                        mm.modularity, 
+#                                                                                                                                        mm_timer.total())
+#     return vc
+
 def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False):
     VC = ig.VertexClustering
     # start with each vertex in its own commuanity
-    vc = VC(graph, [i for i, _ in enumerate(graph.vs)])
-
-    mm = ModularityMaintainer(graph, vc.membership)
-
-    vc_timer = Timer()
-    mm_timer = Timer()
+    mm = ModularityMaintainer(graph, [i for i, _ in enumerate(graph.vs)])
 
     partition_vertexes = defaultdict(set)
-    for i, p in enumerate(vc.membership):
+    for i, p in enumerate(mm.membership):
         partition_vertexes[p].add(i)
 
     partition_counts = dict()
     for i, s in partition_vertexes.iteritems():
         partition_counts[i] = len(s)
 
+    previous_modularity = mm.modularity
     for iteration in xrange(max_iterations):
-        # Copy membership, just to avoid odd errors. May not be necessary.
-        membership         = list(vc.membership)
-        selected_vertex    = random.randint(0, len(membership) - 1)
-        selected_community = membership[selected_vertex]
-
-        new_communities    = partition_counts.keys()
+        selected_vertex    = random.randint(0, len(graph.vs) - 1)
+        selected_community = mm.membership[selected_vertex]
+        new_communities    = [c for c in partition_counts.keys() if c != selected_community]
         random.shuffle(new_communities)
         found_one          = False
         found_community    = 0
+        best_modularity    = float("-inf")
+        best_community     = 0
         for new_community in new_communities:
             if new_community == selected_community:
                 continue
-            membership[selected_vertex] = new_community
-            new_vc = vc_timer.timeit(lambda:  VC(graph,membership))
-            mm_timer.timeit(lambda: mm.move_community(selected_vertex, new_community))
-            delta = new_vc.modularity - vc.modularity
+            mm.move_community(selected_vertex, new_community)
+            delta = mm.modularity - previous_modularity
             if delta > min_delta:
                 found_community = new_community
                 found_one = True
-                break
+                if mm.modularity > best_modularity:
+                    best_community = new_community
+                    best_modularity = mm.modularity
+            mm.revert()
         if found_one:
-            partition_counts[vc.membership[selected_vertex]] -= 1
-            if not partition_counts[vc.membership[selected_vertex]]:
-                del(partition_counts[vc.membership[selected_vertex]])
-            partition_counts[found_community] += 1
-            vc = new_vc
+            partition_counts[selected_community] -= 1
+            if not partition_counts[selected_community]:
+                del(partition_counts[selected_community])
+            partition_counts[best_community] += 1
+            mm.move_community(selected_vertex, best_community)
             if verbose:
-                print "Greedy clustering. iteration={0} modularity:={1} delta={2}. vc time={3}. mm modularity={4}. mm time={5}".format(iteration, 
-                                                                                                                                       vc.modularity, 
-                                                                                                                                       delta, 
-                                                                                                                                       vc_timer.total(),
-                                                                                                                                       mm.modularity, 
-                                                                                                                                       mm_timer.total())
-        # else:
-        #     print "Greedy clustering converged at {0} iterations.".format(iteration)
-        #     break
-    return vc
+                print "Greedy clustering. iteration={0} modularity:={1} delta={2}.".format(iteration, mm.modularity, mm.modularity - previous_modularity)
+            previous_modularity = mm.modularity
+    
+#    pdb.set_trace()
+    return VC(graph, list(mm.membership))
 
-def main2():
+def main():
     # algorithm_func = {
     #     'eigenvector': (Graph.community_leading_eigenvector, None),
     #     'walktrap':    (Graph.community_walktrap, Dendrogram.as_clusterin),
@@ -281,12 +341,14 @@ def main2():
     clusters = defaultdict(dict)
 
     #  create path to data in a way that will work with Windows
-    path_to_fb_data = os.path.join(*"data/egonets-Facebook/facebook".split("/"))
+#    path_to_fb_data = os.path.join(*"data/egonets-Facebook/facebook".split("/"))
+#    graphs['facebook']                     = load_facebook(data_dir=path_to_fb_data)
 
-    graphs['facebook']                     = load_facebook(data_dir=path_to_fb_data)
+    fb_file_name = os.path.join(*"data/egonets-Facebook/facebook_combined.txt".split("/"))
+    graphs['facebook']                     = load_tsv_edges(fb_file_name, directed=False)
     clusters['facebook']['eigenvector'] = graphs['facebook'].community_leading_eigenvector()
     clusters['facebook']['walktrap']    = graphs['facebook'].community_walktrap().as_clustering()
-    clusters['facebook']['greedy']      = greedy_clustering(graphs['facebook'])
+    clusters['facebook']['greedy']      = greedy_clustering(graphs['facebook'], verbose=True, max_iterations=10000)
 
     wiki_vote_file_name                    = os.path.join(*"data/wiki-Vote/wiki-Vote.txt".split("/"))
     graphs['wikivote']                     = load_tsv_edges(wiki_vote_file_name)
@@ -300,36 +362,12 @@ def main2():
 
     for dataset, graph in graphs.items():
         print "Graph summary for dataset {0}: {1}".format(dataset, graph.summary())
-#        print "    modularity: {0}".format(graph.modularity())
         for algorithm, cluster in clusters[dataset].items():
             print "Clusters summary for dataset {0}.{1}: {2}".format(dataset, algorithm, cluster.summary())
             print "    modularity: {0}".format(cluster.modularity)
         print ""
 
     return
-
-def main():
-
-    pdb.set_trace()
-    graphs = {}
-    clusters = defaultdict(dict)
-
-    test_file_name                  = os.path.join(*"data/test/test.txt".split("/"))
-    graphs['test']                  = load_tsv_edges(test_file_name)
-    clusters['test']['eigenvector'] = graphs['test'].community_leading_eigenvector()
-    clusters['test']['walktrap']    = graphs['test'].community_walktrap().as_clustering()
-    clusters['test']['greedy']      = do_greedy_clustering(graphs['test'])
-
-    for dataset, graph in graphs.items():
-        print "Graph summary for dataset {0}: {1}".format(dataset, graph.summary())
-#        print "    modularity: {0}".format(graph.modularity())
-        for algorithm, cluster in clusters[dataset].items():
-            print "Clusters summary for dataset {0}.{1}: {2}".format(dataset, algorithm, cluster.summary())
-            print "    modularity: {0}".format(cluster.modularity)
-        print ""
-
-    return
-
 
 if __name__ == '__main__':
     main()
