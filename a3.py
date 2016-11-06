@@ -328,14 +328,54 @@ def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False):
                 print "Greedy clustering. iteration={0} modularity:={1} delta={2}.".format(iteration, mm.modularity, mm.modularity - previous_modularity)
             previous_modularity = mm.modularity
     
-#    pdb.set_trace()
+            #    pdb.set_trace()
+    print "Finished greedy_clustering. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership)))
+    return VC(graph, list(mm.membership))
+
+def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False):
+    VC = ig.VertexClustering
+    # start with each vertex in its own commuanity
+    mm = ModularityMaintainer(graph, [i for i, _ in enumerate(graph.vs)])
+
+    partition_vertexes = defaultdict(set)
+    for i, p in enumerate(mm.membership):
+        partition_vertexes[p].add(i)
+
+    partition_counts = dict()
+    for i, s in partition_vertexes.iteritems():
+        partition_counts[i] = len(s)
+
+    previous_modularity = mm.modularity
+    for iteration in xrange(max_iterations):
+        selected_vertex    = random.randint(0, len(graph.vs) - 1)
+        selected_community = mm.membership[selected_vertex]
+        new_communities    = [c for c in partition_counts.keys() if c != selected_community]
+        random.shuffle(new_communities)
+        new_community = new_communities[0]
+        if new_community != selected_community:
+            mm.move_community(selected_vertex, new_community)
+            delta = mm.modularity - previous_modularity
+            if delta > min_delta:
+                found_one = True
+                partition_counts[selected_community] -= 1
+                if not partition_counts[selected_community]:
+                    del(partition_counts[selected_community])
+                partition_counts[new_community] += 1
+                if verbose:
+                    print "Greedy clustering 2. iteration={0} modularity:={1} delta={2}.".format(iteration, mm.modularity, mm.modularity - previous_modularity)
+                previous_modularity = mm.modularity
+            else:
+                mm.revert()
+    
+            #    pdb.set_trace()
+    print "Finished greedy_clustering2. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership)))
     return VC(graph, list(mm.membership))
 
 def main():
-    # algorithm_func = {
-    #     'eigenvector': (Graph.community_leading_eigenvector, None),
-    #     'walktrap':    (Graph.community_walktrap, Dendrogram.as_clusterin),
-    #     'greedy':      (greedy, None),
+    algorithm_func = {
+        'eigenvector': (Graph.community_leading_eigenvector, None),
+        'walktrap':    (Graph.community_walktrap, Dendrogram.as_clustering),
+        'greedy':      (greedy, None),
 
     graphs = {}
     clusters = defaultdict(dict)
@@ -348,7 +388,7 @@ def main():
     graphs['facebook']                     = load_tsv_edges(fb_file_name, directed=False)
     clusters['facebook']['eigenvector'] = graphs['facebook'].community_leading_eigenvector()
     clusters['facebook']['walktrap']    = graphs['facebook'].community_walktrap().as_clustering()
-    clusters['facebook']['greedy']      = greedy_clustering(graphs['facebook'], verbose=True, max_iterations=10000)
+    clusters['facebook']['greedy']      = greedy_clustering2(graphs['facebook'], verbose=True, max_iterations=10000000)
 
     wiki_vote_file_name                    = os.path.join(*"data/wiki-Vote/wiki-Vote.txt".split("/"))
     graphs['wikivote']                     = load_tsv_edges(wiki_vote_file_name)
