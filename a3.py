@@ -192,7 +192,7 @@ class ModularityMaintainer(object):
 #     # It seems igraph will make all vertices a contiguous range, even
 #     # if there are gaps (which would cause the vertices and edges to
 #     # get out of sync.) So add them in here and warn.
-#     for i in xrange(max(V) + 1):
+#     for i in range(max(V) + 1):
 #         if i not in V:
 #             print "Adding missing vertex {0} to V".format(i)
 #             V.add(i)
@@ -221,7 +221,7 @@ def load_tsv_edges(data_file_name, directed=None):
 
 def do_greedy_clustering(graph, tries=100, max_iterations=5000, min_delta=0.0, verbose=False):
     best_vc = None
-    for _ in xrange(tries):
+    for _ in range(tries):
         vc = greedy_clustering(graph, max_iterations, min_delta, verbose)
         if not best_vc or vc.modularity > best_vc.modularity:
             best_vc = vc
@@ -242,10 +242,10 @@ def do_greedy_clustering(graph, tries=100, max_iterations=5000, min_delta=0.0, v
 #         partition_vertexes[p].add(i)
 
 #     partition_counts = dict()
-#     for i, s in partition_vertexes.iteritems():
+#     for i, s in partition_vertexes.items():
 #         partition_counts[i] = len(s)
 
-#     for iteration in xrange(max_iterations):
+#     for iteration in range(max_iterations):
 #         # Copy membership, just to avoid odd errors. May not be necessary.
 #         membership         = list(vc.membership)
 #         selected_vertex    = random.randint(0, len(membership) - 1)
@@ -301,11 +301,11 @@ def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False):
         partition_vertexes[p].add(i)
 
     partition_counts = dict()
-    for i, s in partition_vertexes.iteritems():
+    for i, s in partition_vertexes.items():
         partition_counts[i] = len(s)
 
     previous_modularity = mm.modularity
-    for iteration in xrange(max_iterations):
+    for iteration in range(max_iterations):
         selected_vertex    = random.randint(0, len(graph.vs) - 1)
         selected_community = mm.membership[selected_vertex]
         new_communities    = [c for c in partition_counts.keys() if c != selected_community]
@@ -333,10 +333,10 @@ def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False):
             partition_counts[best_community] += 1
             mm.move_community(selected_vertex, best_community)
             if verbose:
-                print "Greedy clustering. iteration={0} modularity:={1} delta={2}.".format(iteration, mm.modularity, mm.modularity - previous_modularity)
+                print("Greedy clustering. iteration={0} modularity:={1} delta={2}.".format(iteration, mm.modularity, mm.modularity - previous_modularity))
             previous_modularity = mm.modularity
     
-    print "Finished greedy_clustering. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership)))
+    print("Finished greedy_clustering. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
     return VC(graph, list(normalize_membership(mm.membership)))
 
 def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False):
@@ -349,11 +349,11 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False)
         partition_vertexes[p].add(i)
 
     partition_counts = dict()
-    for i, s in partition_vertexes.iteritems():
+    for i, s in partition_vertexes.items():
         partition_counts[i] = len(s)
 
     previous_modularity = mm.modularity
-    for iteration in xrange(max_iterations):
+    for iteration in range(max_iterations):
         selected_vertex    = random.randint(0, len(graph.vs) - 1)
         selected_community = mm.membership[selected_vertex]
         new_communities    = [c for c in partition_counts.keys() if c != selected_community]
@@ -369,12 +369,12 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False)
                     del(partition_counts[selected_community])
                 partition_counts[new_community] += 1
                 if verbose:
-                    print "Greedy clustering 2. iteration={0} modularity:={1} delta={2}.".format(iteration, mm.modularity, mm.modularity - previous_modularity)
+                    print("Greedy clustering 2. iteration={0} modularity:={1} delta={2}.".format(iteration, mm.modularity, mm.modularity - previous_modularity))
                 previous_modularity = mm.modularity
             else:
                 mm.revert()
     
-    print "Finished greedy_clustering2. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership)))
+    print("Finished greedy_clustering2. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
     return VC(graph, list(normalize_membership(mm.membership)))
 
 def main():
@@ -418,19 +418,19 @@ def main():
             continue
         graphs[dataset] = load_tsv_edges(dataset_file_name[dataset], directed=dataset_is_directed[dataset])
         for algorithm, func in algorithm_func.items():
-            print "Doing {0} {1}".format(dataset, algorithm)
+            print("Doing {0} {1}".format(dataset, algorithm))
             kw = dataset_algorithm_params[dataset][algorithm]
             t0 = time.time()
             clusters[dataset][algorithm] = func(graphs[dataset], kw)
             dataset_algorithm_time[dataset][algorithm] = time.time() - t0
 
     for dataset, graph in graphs.items():
-        print "Graph summary for dataset {0}: {1}".format(dataset, graph.summary())
+        print("Graph summary for dataset {0}: {1}".format(dataset, graph.summary()))
         for algorithm, cluster in clusters[dataset].items():
-            print "Clusters summary for dataset {0}.{1}: {2}".format(dataset, algorithm, cluster.summary())
-            print "    modularity: {0}".format(cluster.modularity)
-            print "    time: {0}".format(dataset_algorithm_time[dataset][algorithm])
-        print ""
+            print("Clusters summary for dataset {0}.{1}: {2}".format(dataset, algorithm, cluster.summary()))
+            print("    modularity: {0}".format(cluster.modularity))
+            print("    time: {0}".format(dataset_algorithm_time[dataset][algorithm]))
+        print("")
 
     return
 

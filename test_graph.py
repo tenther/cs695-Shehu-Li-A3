@@ -78,7 +78,7 @@ def main(verbose=False):
 
     for name, clustering in sorted(clustering.items()):
         visual_style['vertex_color']=[community_color[i] for i in clustering.membership]
-        print "Displaying clustering of {0} algorithm. Modularity is {1}".format(name, clustering.modularity)
+        print("Displaying clustering of {0} algorithm. Modularity is {1}".format(name, clustering.modularity))
         ig.plot(g, layout=layout, **visual_style)
 
     return
