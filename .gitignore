@@ -2,6 +2,3 @@ data
 *~
 *.pyc
 *.tgz
-images
-*.txt
-*.log
