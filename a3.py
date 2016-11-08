@@ -1,13 +1,14 @@
-#!/usr/bin/python3
+#!/usr/bin/python3 -u
 from __future__ import division
-import igraph as ig
+import argparse
+from collections import defaultdict
+import functools
 import glob
+import igraph as ig
 import os
 import pdb
-import re
-import functools
-from collections import defaultdict
 import random
+import re
 import time
 
 comments_re = re.compile(r'#.*')
@@ -34,7 +35,6 @@ class Timer(object):
 
 class ModularityMaintainer(object):
     def __init__(self, graph, membership):
-
         # Code based on function igraph_modularity() in https://github.com/igraph/igraph/blob/master/src/community.c
         no_of_comms = max(membership) + 1
         a           = [0.0 for _ in range(no_of_comms)]
@@ -141,65 +141,6 @@ class ModularityMaintainer(object):
         self.modularity = sum(self.m)
         self.previous = None
 
-# Load one set of files 
-# def load_facebook(data_dir, file_names=None):
-#     data_file_path = functools.partial(os.path.join, data_dir)
-#     if not file_names:
-#         if not data_dir:
-#             raise Exception("Must provide data_dir with file_names")
-#         file_names = glob.glob(data_file_path("*.circles"))
-
-#     # It seems to be faster to loaded vertices and edges into sets and
-#     # create the graph with them all at once, instead of adding them
-#     # to the graph as we go. Didn't rigorously check this though.
-#     V = set()
-#     E = set()
-
-#     for circles_file_name in file_names:
-#         # Add each id from a file name to the vertices
-#         ego_id = int(circles_file_name.split('/')[-1].split('.')[0])
-#         V.add(ego_id)
-
-#         # Add vertices from feat file
-#         feat_file_name = os.path.join(data_dir, "{0}.feat".format(ego_id))
-#         with open(feat_file_name) as feat_file:
-#             for line in feat_file:
-#                 fields = line.strip().split()
-#                 id = int(fields[0])
-#                 V.add(id)
-
-#         # Add edges
-#         edge_file_name = os.path.join(data_dir, "{0}.edges".format(ego_id))
-#         with open(edge_file_name) as edge_file:
-#             for line in edge_file:
-#                 v1, v2 = [int(v) for v in line.strip().split()]
-#                 V.add(v1)
-#                 V.add(v2)
-#                 E.add((v1, v2))
-
-#                 # make sure links are symmetrical
-#                 E.add((v2, v1))
-
-#                 # Links from primary vertex to others is implicit. E is a set, so we won't have dups.
-#                 E.add((ego_id, v1))
-#                 E.add((ego_id, v2))
-
-#                 # make sure links are symmetrical
-#                 E.add((v1, ego_id))
-#                 E.add((v2, ego_id))
-
-
-#     # It seems igraph will make all vertices a contiguous range, even
-#     # if there are gaps (which would cause the vertices and edges to
-#     # get out of sync.) So add them in here and warn.
-#     for i in range(max(V) + 1):
-#         if i not in V:
-#             print("Adding missing vertex {0} to V".format(i))
-#             V.add(i)
-#     g = ig.Graph(n=len(V), edges=list(E))
-
-#     return g
-
 def load_tsv_edges(data_file_name, directed=None):
 
     V = set()
@@ -227,69 +168,12 @@ def do_greedy_clustering(graph, tries=100, max_iterations=5000, min_delta=0.0, v
             best_vc = vc
     return vc
 
-# def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False):
-#     VC = ig.VertexClustering
-#     # start with each vertex in its own commuanity
-#     vc = VC(graph, [i for i, _ in enumerate(graph.vs)])
-
-#     mm = ModularityMaintainer(graph, vc.membership)
-
-#     vc_timer = Timer()
-#     mm_timer = Timer()
-
-#     partition_vertexes = defaultdict(set)
-#     for i, p in enumerate(vc.membership):
-#         partition_vertexes[p].add(i)
-
-#     partition_counts = dict()
-#     for i, s in partition_vertexes.items():
-#         partition_counts[i] = len(s)
-
-#     for iteration in range(max_iterations):
-#         # Copy membership, just to avoid odd errors. May not be necessary.
-#         membership         = list(vc.membership)
-#         selected_vertex    = random.randint(0, len(membership) - 1)
-#         selected_community = membership[selected_vertex]
-
-#         new_communities    = [c for c in partition_counts.keys() if c != selected_community]
-#         random.shuffle(new_communities)
-#         found_one          = False
-#         found_community    = 0
-#         for new_community in new_communities:
-#             if new_community == selected_community:
-#                 continue
-#             mm_timer.timeit(lambda: mm.move_community(selected_vertex, new_community))
-#             membership[selected_vertex] = new_community
-#             new_vc = vc_timer.timeit(lambda:  VC(graph,membership))
-#             delta = new_vc.modularity - vc.modularity
-#             if delta > min_delta:
-#                 found_community = new_community
-#                 found_one = True
-#                 break
-#             else:
-#                 mm.revert()
-#         if found_one:
-#             partition_counts[vc.membership[selected_vertex]] -= 1
-#             if not partition_counts[vc.membership[selected_vertex]]:
-#                 del(partition_counts[vc.membership[selected_vertex]])
-#             partition_counts[found_community] += 1
-#             vc = new_vc
-#             if verbose:
-#                 print("Greedy clustering. iteration={0} modularity:={1} delta={2}. vc time={3}. mm modularity={4}. mm time={5}".format(iteration, 
-#                                                                                                                                        vc.modularity, 
-#                                                                                                                                        delta, 
-#                                                                                                                                        vc_timer.total(),
-#                                                                                                                                        mm.modularity, 
-#                                                                                                                                        mm_timer.total()))
-#     return vc
-
 # Make communities indexed from 0
 def normalize_membership(membership):
     communities = set(membership)
     old_to_new = dict(zip(sorted(list(communities)),
                           range(len(communities))))
     return [old_to_new[x] for x in membership]
-    
 
 def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False):
     VC = ig.VertexClustering
@@ -377,7 +261,7 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False)
     print("Finished greedy_clustering2. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
     return VC(graph, list(normalize_membership(mm.membership)))
 
-def main():
+def main(dataset=None, algorithm=None, verbose=False, max_iters1=30000, max_iters2=10000000, write_clusters=False):
     dataset_file_name = {
         'facebook': os.path.join(*"data/egonets-Facebook/facebook_combined.txt".split("/")),
         'wikivote': os.path.join(*"data/wiki-Vote/wiki-Vote.txt".split("/")),
@@ -398,14 +282,12 @@ def main():
     }
 
     dataset_algorithm_params = defaultdict(lambda: defaultdict(dict))
-    dataset_algorithm_params['facebook']['greedy-1'] = dict(verbose=True, max_iterations=1000)
-    dataset_algorithm_params['facebook']['greedy-2'] = dict(verbose=True, max_iterations=100000)
-    dataset_algorithm_params['wikivote']['greedy-1'] = dict(verbose=True, max_iterations=1000)
-    dataset_algorithm_params['wikivote']['greedy-2'] = dict(verbose=True, max_iterations=100000)
-    dataset_algorithm_params['collab']['greedy-1']   = dict(verbose=True, max_iterations=1000)
-    dataset_algorithm_params['collab']['greedy-2']   = dict(verbose=True, max_iterations=100000)
-
-    datasets_to_skip = ['wikivote', 'collab']
+    dataset_algorithm_params['facebook']['greedy-1'] = dict(verbose=verbose, max_iterations=max_iters1)
+    dataset_algorithm_params['facebook']['greedy-2'] = dict(verbose=verbose, max_iterations=max_iters2)
+    dataset_algorithm_params['wikivote']['greedy-1'] = dict(verbose=verbose, max_iterations=max_iters1)
+    dataset_algorithm_params['wikivote']['greedy-2'] = dict(verbose=verbose, max_iterations=max_iters2)
+    dataset_algorithm_params['collab']['greedy-1']   = dict(verbose=verbose, max_iterations=max_iters1)
+    dataset_algorithm_params['collab']['greedy-2']   = dict(verbose=verbose, max_iterations=max_iters2)
 
     graphs = {}
     clusters = defaultdict(dict)
@@ -413,29 +295,65 @@ def main():
 
 #    pdb.set_trace()
 
-    for dataset in dataset_file_name.keys():
-        if dataset in datasets_to_skip:
+    for data in dataset_file_name.keys():
+        if dataset is not None and data != dataset:
             continue
-        graphs[dataset] = load_tsv_edges(dataset_file_name[dataset], directed=dataset_is_directed[dataset])
-        for algorithm, func in algorithm_func.items():
-            print("Doing {0} {1}".format(dataset, algorithm))
-            kw = dataset_algorithm_params[dataset][algorithm]
+        graphs[data] = load_tsv_edges(dataset_file_name[data], directed=dataset_is_directed[data])
+        for alg, func in algorithm_func.items():
+            if algorithm is not None and alg != algorithm:
+                continue
+            print("Doing {0} {1}".format(data, alg))
+            kw = dataset_algorithm_params[data][alg]
             t0 = time.time()
-            clusters[dataset][algorithm] = func(graphs[dataset], kw)
-            dataset_algorithm_time[dataset][algorithm] = time.time() - t0
+            clusters[data][alg] = func(graphs[data], kw)
+            dataset_algorithm_time[data][alg] = time.time() - t0
 
-    for dataset, graph in graphs.items():
-        print("Graph summary for dataset {0}: {1}".format(dataset, graph.summary()))
-        for algorithm, cluster in clusters[dataset].items():
-            print("Clusters summary for dataset {0}.{1}: {2}".format(dataset, algorithm, cluster.summary()))
+    for data, graph in graphs.items():
+        print("Graph summary for dataset {0}: {1}".format(data, graph.summary()))
+        for alg, cluster in clusters[data].items():
+            print("Clusters summary for dataset {0}.{1}: {2}".format(data, alg, cluster.summary()))
             print("    modularity: {0}".format(cluster.modularity))
-            print("    time: {0}".format(dataset_algorithm_time[dataset][algorithm]))
+            print("    time: {0}".format(dataset_algorithm_time[data][alg]))
         print("")
 
+    if write_clusters:
+        for data in clusters.keys():
+            for alg, cluster in clusters[data].items():
+                file_name = time.strftime("data/{0}_{1}_%y-%-m-%d_%H-%-M-%S.txt".format(data, alg))
+                print("Writing {0}".format(file_name))
+                with open(file_name, 'w') as f:
+                    for i, c in enumerate(cluster.membership):
+                        f.write("{0}\t{1}\n".format(i,c))
     return
 
 if __name__ == '__main__':
-    main()
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-d',
+                        choices=['facebook','wikivote','collab'],
+                        help='Dataset to process',
+                        default=None)
+    parser.add_argument('-a',
+                        choices=['eigenvector', 'walktrap', 'greedy-1', 'greedy-2'],
+                        help='Algorithm to run on dataset',
+                            default=None)
+    parser.add_argument('-v',
+                        action='store_true',
+                        help='Verbose mode',
+                        default=False)
+    parser.add_argument('-x1',
+                        type=int,
+                        help='max iterations to run on first greedy algorithm',
+                            default=30000)
+    parser.add_argument('-x2',
+                        type=int,
+                        help='max iterations to run on second greedy algorithm',
+                            default=10000000)
+    parser.add_argument('-w',
+                        action='store_true',
+                        help='write created clusters to disk',
+                        default=False)
+    args = parser.parse_args()
 
+    main(dataset=args.d, algorithm=args.a, verbose=args.v, max_iters1=args.x1,max_iters2=args.x2,write_clusters=args.w)
 
