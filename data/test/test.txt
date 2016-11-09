@@ -1,0 +1,32 @@
+a	b
+b	c
+a	c
+c	d
+d	e
+d	i
+e	f
+e	g
+f	g
+g	h
+h	i
+h	j
+j	i
+j	k
+i	k
+# mirror
+# b	a
+# c	b
+# c	a
+# d	c
+# e	d
+# i	d
+# f	e
+# g	e
+# g	f
+# h	g
+# i	h
+# j	h
+# i	j
+# k	j
+# k	i
+

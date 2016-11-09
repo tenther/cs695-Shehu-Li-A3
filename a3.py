@@ -212,8 +212,9 @@ def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False):
             mm.revert()
         if found_one:
             partition_counts[selected_community] -= 1
-            if not partition_counts[selected_community]:
-                del(partition_counts[selected_community])
+            # commented this out to see if leaving the total number of partitions the same as the original makes a difference
+            # if not partition_counts[selected_community]:
+            #     del(partition_counts[selected_community])
             partition_counts[best_community] += 1
             mm.move_community(selected_vertex, best_community)
             if verbose:
@@ -221,7 +222,7 @@ def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False):
             previous_modularity = mm.modularity
     
     print("Finished greedy_clustering. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
-    return VC(graph, list(normalize_membership(mm.membership)))
+    return VC(graph, normalize_membership(mm.membership))
 
 def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False):
     VC = ig.VertexClustering
@@ -243,38 +244,44 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False)
         new_communities    = [c for c in partition_counts.keys() if c != selected_community]
         random.shuffle(new_communities)
         new_community = new_communities[0]
-        if new_community != selected_community:
-            mm.move_community(selected_vertex, new_community)
-            delta = mm.modularity - previous_modularity
-            if delta > min_delta:
-                found_one = True
-                partition_counts[selected_community] -= 1
-                if not partition_counts[selected_community]:
-                    del(partition_counts[selected_community])
-                partition_counts[new_community] += 1
-                if verbose:
-                    print("Greedy clustering 2. iteration={0} modularity:={1} delta={2}.".format(iteration, mm.modularity, mm.modularity - previous_modularity))
-                previous_modularity = mm.modularity
-            else:
-                mm.revert()
+        mm.move_community(selected_vertex, new_community)
+        delta = mm.modularity - previous_modularity
+        if delta > min_delta:
+            found_one = True
+            partition_counts[selected_community] -= 1
+            if not partition_counts[selected_community]:
+                del(partition_counts[selected_community])
+            partition_counts[new_community] += 1
+            if verbose:
+                print("Greedy clustering 2. iteration={0} modularity:={1} delta={2}.".format(iteration, mm.modularity, mm.modularity - previous_modularity))
+            previous_modularity = mm.modularity
+        else:
+            mm.revert()
     
     print("Finished greedy_clustering2. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
-    return VC(graph, list(normalize_membership(mm.membership)))
+    return VC(graph, normalize_membership(mm.membership))
+
+valid_datasets = ['facebook','wikivote','collab', 'test', 'karate',]
 
 def main(dataset=None, algorithm=None, verbose=False, max_iters1=30000, max_iters2=10000000, write_clusters=False):
     dataset_file_name = {
         'facebook': os.path.join(*"data/egonets-Facebook/facebook_combined.txt".split("/")),
         'wikivote': os.path.join(*"data/wiki-Vote/wiki-Vote.txt".split("/")),
         'collab':   os.path.join(*"data/ca-GrQc/ca-GrQc.txt".split("/")),
+        'karate':   os.path.join(*"data/karate/karate.txt".split("/")),
+        'test':     os.path.join(*"data/test/test.txt".split("/")),
     }
 
     dataset_is_directed = {
         'facebook':  False,
         'wikivote':  True,
         'collab':    True,
+        'karate':    False,
+        'test':      False,
     }
 
     algorithm_func = {
+        'betweenness': lambda g, kw: g.community_edge_betweenness().as_clustering(),
         'eigenvector': lambda g, kw: g.community_leading_eigenvector(),
         'walktrap':    lambda g, kw: g.community_walktrap().as_clustering(),
         'greedy-1':    lambda g, kw: greedy_clustering(g, **kw),
@@ -282,12 +289,9 @@ def main(dataset=None, algorithm=None, verbose=False, max_iters1=30000, max_iter
     }
 
     dataset_algorithm_params = defaultdict(lambda: defaultdict(dict))
-    dataset_algorithm_params['facebook']['greedy-1'] = dict(verbose=verbose, max_iterations=max_iters1)
-    dataset_algorithm_params['facebook']['greedy-2'] = dict(verbose=verbose, max_iterations=max_iters2)
-    dataset_algorithm_params['wikivote']['greedy-1'] = dict(verbose=verbose, max_iterations=max_iters1)
-    dataset_algorithm_params['wikivote']['greedy-2'] = dict(verbose=verbose, max_iterations=max_iters2)
-    dataset_algorithm_params['collab']['greedy-1']   = dict(verbose=verbose, max_iterations=max_iters1)
-    dataset_algorithm_params['collab']['greedy-2']   = dict(verbose=verbose, max_iterations=max_iters2)
+    for data in valid_datasets:
+        dataset_algorithm_params[dataset]['greedy-1'] = dict(verbose=verbose, max_iterations=max_iters1)
+        dataset_algorithm_params[dataset]['greedy-2'] = dict(verbose=verbose, max_iterations=max_iters2)
 
     graphs = {}
     clusters = defaultdict(dict)
@@ -295,7 +299,7 @@ def main(dataset=None, algorithm=None, verbose=False, max_iters1=30000, max_iter
 
 #    pdb.set_trace()
 
-    for data in dataset_file_name.keys():
+    for data in valid_datasets:
         if dataset is not None and data != dataset:
             continue
         graphs[data] = load_tsv_edges(dataset_file_name[data], directed=dataset_is_directed[data])
@@ -319,7 +323,12 @@ def main(dataset=None, algorithm=None, verbose=False, max_iters1=30000, max_iter
     if write_clusters:
         for data in clusters.keys():
             for alg, cluster in clusters[data].items():
-                file_name = time.strftime("data/{0}_{1}_%y-%-m-%d_%H-%-M-%S.txt".format(data, alg))
+                params = ""
+                if alg == 'greedy-1':
+                    params = '{0}_'.format(max_iters1)
+                if alg == 'greedy-2':
+                    params = '{0}_'.format(max_iters2)
+                file_name = time.strftime("data/community_{0}_{1}_{2}%y-%-m-%d_%H-%-M-%S.txt".format(data, alg, params))
                 print("Writing {0}".format(file_name))
                 with open(file_name, 'w') as f:
                     for i, c in enumerate(cluster.membership):
@@ -330,11 +339,11 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-d',
-                        choices=['facebook','wikivote','collab'],
+                        choices=valid_datasets,
                         help='Dataset to process',
                         default=None)
     parser.add_argument('-a',
-                        choices=['eigenvector', 'walktrap', 'greedy-1', 'greedy-2'],
+                        choices=['eigenvector', 'walktrap', 'greedy-1', 'greedy-2', 'betweenness',],
                         help='Algorithm to run on dataset',
                             default=None)
     parser.add_argument('-v',
