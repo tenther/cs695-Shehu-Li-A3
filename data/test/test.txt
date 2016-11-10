@@ -1,32 +1,16 @@
-a	b
-b	c
-a	c
-c	d
-d	e
-d	i
-e	f
-e	g
-f	g
-g	h
-h	i
-h	j
-j	i
-j	k
-i	k
-# mirror
-# b	a
-# c	b
-# c	a
-# d	c
-# e	d
-# i	d
-# f	e
-# g	e
-# g	f
-# h	g
-# i	h
-# j	h
-# i	j
-# k	j
-# k	i
+0	1
+1	2
+0	2
+2	3
+3	4
+3	8
+4	5
+4	6
+5	6
+6	7
+7	8
+7	9
+9	8
+9	10
+8	10
 

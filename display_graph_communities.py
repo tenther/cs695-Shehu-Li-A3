@@ -4,25 +4,29 @@ import argparse
 import a3
 import pdb
 
-def load_membership(membership_file_name):
-    membership = []
+def load_membership(graph, membership_file_name):
+    membership = [None for _ in graph.vs]
     with open(membership_file_name) as membership_file:
         for line in membership_file:
             v, c = line.strip().split()
-            membership.append(int(c))
+            # idx = graph.vs.select(name_eq=v)[0].index
+            # membership[idx] = int(c)
+            membership[int(v)] = int(c)
     return membership
 
-def main(graph_file_name, membership_file_name, directed):
+def main(graph_file_name, membership_file_name, directed, labels=False):
+#    pdb.set_trace()
     g          = a3.load_tsv_edges(graph_file_name, directed=directed)
-    membership = load_membership(membership_file_name)
+    membership = load_membership(g, membership_file_name)
     visual_style={}
-#    visual_style['vertex_label']=g.vs["name"]
-#    visual_style['label_dist']=1
+    if labels:
+        visual_style['vertex_label']=g.vs["name"]
+        visual_style['label_dist']=1
     visual_style['bbox']=(600,600)
     visual_style['margin']=50
 
-#    layout = g.layout_kamada_kawai()
-    layout = g.layout_lgl()
+    layout = g.layout_kamada_kawai()
+#    layout = g.layout_lgl()
 
     community_color = ['purple', 'green', 'light blue', 'yellow', 
                        'red', 'orange', 'pink', 'white', 
@@ -43,5 +47,9 @@ if __name__=='__main__':
                         action='store_true',
                         help='Directed',
                         default=False)
+    parser.add_argument('-l',
+                        action='store_true',
+                        help='Display labels on graph',
+                        default=False)
     args = parser.parse_args()
-    main(args.g, args.m, args.d)
+    main(args.g, args.m, args.d, args.l)

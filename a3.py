@@ -151,19 +151,22 @@ def load_tsv_edges(data_file_name, directed=None):
             line = comments_re.sub('', line.strip()).strip()
             if line:
                 source, target = line.split()
+                source = 'v' + source
+                target = 'v' + target
                 V.add(source)
                 V.add(target)
                 E.add((source, target))
 
     g = ig.Graph(directed=directed)
-    g.add_vertices(list(V))
+    g.add_vertices(sorted(list(V)))
     g.add_edges(list(E))
+#    g.vs["name"] = [str(v.index) for v in g.vs]
     return g
 
-def do_greedy_clustering(graph, tries=100, max_iterations=5000, min_delta=0.0, verbose=False):
+def do_greedy_clustering(graph, func, tries=100, max_iterations=5000, min_delta=0.0, verbose=False):
     best_vc = None
     for _ in range(tries):
-        vc = greedy_clustering(graph, max_iterations, min_delta, verbose)
+        vc = func(graph, max_iterations, min_delta, verbose)
         if not best_vc or vc.modularity > best_vc.modularity:
             best_vc = vc
     return vc
@@ -221,7 +224,8 @@ def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False):
                 print("Greedy clustering. iteration={0} modularity:={1} delta={2}.".format(iteration, mm.modularity, mm.modularity - previous_modularity))
             previous_modularity = mm.modularity
     
-    print("Finished greedy_clustering. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
+    if verbose:
+        print("Finished greedy_clustering. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
     return VC(graph, normalize_membership(mm.membership))
 
 def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False):
@@ -258,7 +262,8 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False)
         else:
             mm.revert()
     
-    print("Finished greedy_clustering2. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
+    if verbose:
+        print("Finished greedy_clustering2. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
     return VC(graph, normalize_membership(mm.membership))
 
 valid_datasets = ['facebook','wikivote','collab', 'test', 'karate',]
@@ -269,7 +274,7 @@ def main(dataset=None, algorithm=None, verbose=False, max_iters1=30000, max_iter
         'wikivote': os.path.join(*"data/wiki-Vote/wiki-Vote.txt".split("/")),
         'collab':   os.path.join(*"data/ca-GrQc/ca-GrQc.txt".split("/")),
         'karate':   os.path.join(*"data/karate/karate.txt".split("/")),
-        'test':     os.path.join(*"data/test/test.txt".split("/")),
+        'test':     os.path.join(*"data/test/old_test.txt".split("/")),
     }
 
     dataset_is_directed = {
@@ -284,20 +289,20 @@ def main(dataset=None, algorithm=None, verbose=False, max_iters1=30000, max_iter
         'betweenness': lambda g, kw: g.community_edge_betweenness().as_clustering(),
         'eigenvector': lambda g, kw: g.community_leading_eigenvector(),
         'walktrap':    lambda g, kw: g.community_walktrap().as_clustering(),
-        'greedy-1':    lambda g, kw: greedy_clustering(g, **kw),
-        'greedy-2':    lambda g, kw: greedy_clustering2(g, **kw),
+        'greedy-1':    lambda g, kw: do_greedy_clustering(g, greedy_clustering, **kw),
+        'greedy-2':    lambda g, kw: do_greedy_clustering(g, greedy_clustering2, **kw),
+#        'greedy-1':    lambda g, kw: greedy_clustering(g, **kw),
+#        'greedy-2':    lambda g, kw: greedy_clustering2(g, **kw),
     }
-
+    
     dataset_algorithm_params = defaultdict(lambda: defaultdict(dict))
     for data in valid_datasets:
         dataset_algorithm_params[dataset]['greedy-1'] = dict(verbose=verbose, max_iterations=max_iters1)
         dataset_algorithm_params[dataset]['greedy-2'] = dict(verbose=verbose, max_iterations=max_iters2)
-
+        
     graphs = {}
     clusters = defaultdict(dict)
     dataset_algorithm_time = defaultdict(dict)
-
-#    pdb.set_trace()
 
     for data in valid_datasets:
         if dataset is not None and data != dataset:
@@ -311,6 +316,7 @@ def main(dataset=None, algorithm=None, verbose=False, max_iters1=30000, max_iter
             t0 = time.time()
             clusters[data][alg] = func(graphs[data], kw)
             dataset_algorithm_time[data][alg] = time.time() - t0
+#            pdb.set_trace()
 
     for data, graph in graphs.items():
         print("Graph summary for dataset {0}: {1}".format(data, graph.summary()))

@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 import pdb
 import igraph as ig
@@ -61,7 +61,6 @@ def main(verbose=False):
     clustering['walktrap']    = g.community_walktrap().as_clustering()
     clustering['fixed']       = ig.VertexClustering(g, communities)
     clustering['greedy']       = a3.do_greedy_clustering(g, tries=25, verbose=verbose)
-#    pdb.set_trace()
 
     # Display graphs
     visual_style={}
