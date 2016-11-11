@@ -3,6 +3,7 @@
 import pdb
 import igraph as ig
 import a3
+import os
 
 def main(verbose=False):
 
@@ -60,7 +61,14 @@ def main(verbose=False):
     clustering['eigenvector'] = g.community_leading_eigenvector()
     clustering['walktrap']    = g.community_walktrap().as_clustering()
     clustering['fixed']       = ig.VertexClustering(g, communities)
-    clustering['greedy']       = a3.do_greedy_clustering(g, tries=25, verbose=verbose)
+    clustering['greedy']       = a3.greedy_clustering2(g, verbose=verbose)
+    
+    #Testing the export
+    print("Starting Facebook walktrap")
+    g2 = a3.load_tsv_edges(os.path.join(*"data/egonets-Facebook/facebook_combined.txt".split("/")), False)
+    clusters = g2.community_walktrap().as_clustering()
+    a3.export_gephi_csv(g2,clusters.membership)
+    print("Exporting Gephi spreadsheet csv")
 
     # Display graphs
     visual_style={}
@@ -77,7 +85,7 @@ def main(verbose=False):
 
     for name, clustering in sorted(clustering.items()):
         visual_style['vertex_color']=[community_color[i] for i in clustering.membership]
-        print "Displaying clustering of {0} algorithm. Modularity is {1}".format(name, clustering.modularity)
+        print("Displaying clustering of {0} algorithm. Modularity is {1}".format(name, clustering.modularity))
         ig.plot(g, layout=layout, **visual_style)
 
     return

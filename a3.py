@@ -163,6 +163,28 @@ def load_tsv_edges(data_file_name, directed=None):
 #    g.vs["name"] = [str(v.index) for v in g.vs]
     return g
 
+def export_gephi_csv(graph, membership):
+    g = graph
+    atts = list(g.vs.attribute_names())
+    atts.remove("name")
+    with open("nodes.csv", 'w') as f:
+        line = 'Id,Label,Community' + ','.join(map(str, atts))
+        f.write(line + "\n")
+        for v in g.vs:
+            line = "{0},{1},{2}".format(str(v.index),v["name"],membership[v.index])
+            #We really only care about community, so I guess we don't necessarily need this
+            if len(atts) > 0:
+                temp = [str(v[att]) for att in atts]
+                line += "," + ','.join(map(str,temp))
+            f.write(line + "\n")
+            
+    with open("edges.csv", 'w') as f:
+        f.write("source,target,type\n")
+        temp = [e.tuple for e in g.es]
+        for s,t in temp:
+            line = "{0},{1},{2}".format(str(s),str(t),"undirected")
+            f.write(line + "\n")
+
 def do_greedy_clustering(graph, func, tries=100, max_iterations=5000, min_delta=0.0, max_no_progress=500, verbose=False):
     best_vc = None
     for _ in range(tries):
@@ -255,7 +277,6 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False,
         delta = mm.modularity - previous_modularity
         if delta > min_delta:
             no_progress_counter = 0
-            found_one = True
             partition_counts[selected_community] -= 1
             if not partition_counts[selected_community]:
                 del(partition_counts[selected_community])
@@ -284,8 +305,8 @@ def main(dataset=None, algorithm=None, verbose=False, max_iters1=30000, max_iter
 
     dataset_is_directed = {
         'facebook':  False,
-        'wikivote':  True,
-        'collab':    True,
+        'wikivote':  False,
+        'collab':    False,
         'karate':    False,
         'test':      False,
     }
@@ -339,7 +360,7 @@ def main(dataset=None, algorithm=None, verbose=False, max_iters1=30000, max_iter
                     params = '{0}_'.format(max_iters1)
                 if alg == 'greedy-2':
                     params = '{0}_'.format(max_iters2)
-                file_name = time.strftime("data/community_{0}_{1}_{2}%y-%-m-%d_%H-%-M-%S.txt".format(data, alg, params))
+                file_name = time.strftime("data/community_{0}_{1}_{2}%y-%m-%d_%H-%M-%S.txt".format(data, alg, params))
                 print("Writing {0}".format(file_name))
                 with open(file_name, 'w') as f:
                     for i, c in enumerate(cluster.membership):
