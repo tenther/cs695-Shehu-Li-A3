@@ -163,11 +163,11 @@ def load_tsv_edges(data_file_name, directed=None):
 #    g.vs["name"] = [str(v.index) for v in g.vs]
     return g
 
-def export_gephi_csv(graph, membership):
+def export_gephi_csv(graph, membership, nodes_filename="nodes", edges_filename="edges"):
     g = graph
     atts = list(g.vs.attribute_names())
     atts.remove("name")
-    with open("nodes.csv", 'w') as f:
+    with open(nodes_filename + ".csv", 'w') as f:
         line = 'Id,Label,Community' + ','.join(map(str, atts))
         f.write(line + "\n")
         for v in g.vs:
@@ -178,7 +178,7 @@ def export_gephi_csv(graph, membership):
                 line += "," + ','.join(map(str,temp))
             f.write(line + "\n")
             
-    with open("edges.csv", 'w') as f:
+    with open(edges_filename + ".csv", 'w') as f:
         f.write("source,target,type\n")
         temp = [e.tuple for e in g.es]
         for s,t in temp:
@@ -294,7 +294,7 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False,
 
 valid_datasets = ['facebook','wikivote','collab', 'test', 'karate',]
 
-def main(dataset=None, algorithm=None, verbose=False, max_iters1=30000, max_iters2=10000000, write_clusters=False, tries=1):
+def main(dataset=None, algorithm=None, verbose=False, max_iters1=30000, max_iters2=10000000, write_clusters=False, tries=1, export=False):
     dataset_file_name = {
         'facebook': os.path.join(*"data/egonets-Facebook/facebook_combined.txt".split("/")),
         'wikivote': os.path.join(*"data/wiki-Vote/wiki-Vote.txt".split("/")),
@@ -365,6 +365,13 @@ def main(dataset=None, algorithm=None, verbose=False, max_iters1=30000, max_iter
                 with open(file_name, 'w') as f:
                     for i, c in enumerate(cluster.membership):
                         f.write("{0}\t{1}\n".format(i,c))
+    
+    if export:
+        node_filename = "nodes_{0}_{1}".format(dataset, algorithm)
+        edge_filename = "edges_{0}_{1}".format(dataset, algorithm)
+        export_gephi_csv(clusters[data][alg].graph,clusters[data][alg].membership,node_filename,edge_filename)
+        print("Exporting Gephi spreadsheet csv files: {0}.csv, {1}.csv".format(node_filename,edge_filename))
+    
     return
 
 if __name__ == '__main__':
@@ -398,7 +405,10 @@ if __name__ == '__main__':
                         action='store_true',
                         help='write created clusters to disk',
                         default=False)
+    parser.add_argument('-e',
+                        action='store_true',
+                        help='export Gephi spreadsheet csv file')
     args = parser.parse_args()
 
-    main(dataset=args.d, algorithm=args.a, verbose=args.v, max_iters1=args.x1,max_iters2=args.x2,write_clusters=args.w,tries=args.t)
+    main(dataset=args.d, algorithm=args.a, verbose=args.v, max_iters1=args.x1,max_iters2=args.x2,write_clusters=args.w,tries=args.t,export=args.e)
 
