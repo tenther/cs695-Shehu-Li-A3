@@ -10,6 +10,7 @@ import pdb
 import random
 import re
 import time
+import math
 
 comments_re = re.compile(r'#.*')
 
@@ -290,6 +291,60 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False,
     
     if verbose:
         print("Finished greedy_clustering2. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
+    return VC(graph, normalize_membership(mm.membership))
+
+def mc_clustering(graph, alpha, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=500):
+    VC = ig.VertexClustering
+    # start with each vertex in its own commuanity
+    mm = ModularityMaintainer(graph, [i for i, _ in enumerate(graph.vs)])
+
+    partition_vertexes = defaultdict(set)
+    for i, p in enumerate(mm.membership):
+        partition_vertexes[p].add(i)
+
+    partition_counts = dict()
+    for i, s in partition_vertexes.items():
+        partition_counts[i] = len(s)
+
+    previous_modularity = mm.modularity
+    no_progress_counter = 0
+    accept_change = False
+    for iteration in range(max_iterations):
+        if no_progress_counter == max_no_progress:
+            break
+        selected_vertex    = random.randint(0, len(graph.vs) - 1)
+        selected_community = mm.membership[selected_vertex]
+        new_communities    = [c for c in partition_counts.keys() if c != selected_community]
+        random.shuffle(new_communities)
+        new_community = new_communities[0]
+        mm.move_community(selected_vertex, new_community)
+        delta = mm.modularity - previous_modularity
+        
+        if delta > min_delta:
+            accept_change = True
+        else:
+            p = min(math.exp(delta / alpha),1) #Have to think of how e^x works to continue this
+            r = random.uniform(0,1)
+            if p <= r:
+                accept_change = True
+            else:
+                accept_change = False
+        
+        if accept_change:
+            no_progress_counter = 0
+            partition_counts[selected_community] -= 1
+            if not partition_counts[selected_community]:
+                del(partition_counts[selected_community])
+            partition_counts[new_community] += 1
+            if verbose:
+                print("Greedy clustering 2. iteration={0} modularity:={1} delta={2}.".format(iteration, mm.modularity, mm.modularity - previous_modularity))
+            previous_modularity = mm.modularity
+        else:
+            no_progress_counter += 1
+            mm.revert()
+    
+    if verbose:
+        print("Finished mc_clustering. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
     return VC(graph, normalize_membership(mm.membership))
 
 valid_datasets = ['facebook','wikivote','collab', 'test', 'karate',]
