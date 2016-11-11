@@ -163,13 +163,13 @@ def load_tsv_edges(data_file_name, directed=None):
 #    g.vs["name"] = [str(v.index) for v in g.vs]
     return g
 
-def do_greedy_clustering(graph, func, tries=100, max_iterations=5000, min_delta=0.0, verbose=False):
+def do_greedy_clustering(graph, func, tries=100, max_iterations=5000, min_delta=0.0, max_no_progress=500, verbose=False):
     best_vc = None
     for _ in range(tries):
-        vc = func(graph, max_iterations, min_delta, verbose)
+        vc = func(graph, max_iterations, min_delta, verbose, max_no_progress)
         if not best_vc or vc.modularity > best_vc.modularity:
             best_vc = vc
-    return vc
+    return best_vc
 
 # Make communities indexed from 0
 def normalize_membership(membership):
@@ -178,7 +178,7 @@ def normalize_membership(membership):
                           range(len(communities))))
     return [old_to_new[x] for x in membership]
 
-def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False):
+def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=0):
     VC = ig.VertexClustering
     # start with each vertex in its own commuanity
     mm = ModularityMaintainer(graph, [i for i, _ in enumerate(graph.vs)])
@@ -228,7 +228,7 @@ def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False):
         print("Finished greedy_clustering. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
     return VC(graph, normalize_membership(mm.membership))
 
-def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False):
+def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=500):
     VC = ig.VertexClustering
     # start with each vertex in its own commuanity
     mm = ModularityMaintainer(graph, [i for i, _ in enumerate(graph.vs)])
@@ -242,7 +242,10 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False)
         partition_counts[i] = len(s)
 
     previous_modularity = mm.modularity
+    no_progress_counter = 0
     for iteration in range(max_iterations):
+        if no_progress_counter == max_no_progress:
+            break
         selected_vertex    = random.randint(0, len(graph.vs) - 1)
         selected_community = mm.membership[selected_vertex]
         new_communities    = [c for c in partition_counts.keys() if c != selected_community]
@@ -251,6 +254,7 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False)
         mm.move_community(selected_vertex, new_community)
         delta = mm.modularity - previous_modularity
         if delta > min_delta:
+            no_progress_counter = 0
             found_one = True
             partition_counts[selected_community] -= 1
             if not partition_counts[selected_community]:
@@ -260,6 +264,7 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False)
                 print("Greedy clustering 2. iteration={0} modularity:={1} delta={2}.".format(iteration, mm.modularity, mm.modularity - previous_modularity))
             previous_modularity = mm.modularity
         else:
+            no_progress_counter += 1
             mm.revert()
     
     if verbose:
@@ -268,7 +273,7 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False)
 
 valid_datasets = ['facebook','wikivote','collab', 'test', 'karate',]
 
-def main(dataset=None, algorithm=None, verbose=False, max_iters1=30000, max_iters2=10000000, write_clusters=False):
+def main(dataset=None, algorithm=None, verbose=False, max_iters1=30000, max_iters2=10000000, write_clusters=False, tries=1):
     dataset_file_name = {
         'facebook': os.path.join(*"data/egonets-Facebook/facebook_combined.txt".split("/")),
         'wikivote': os.path.join(*"data/wiki-Vote/wiki-Vote.txt".split("/")),
@@ -297,8 +302,8 @@ def main(dataset=None, algorithm=None, verbose=False, max_iters1=30000, max_iter
     
     dataset_algorithm_params = defaultdict(lambda: defaultdict(dict))
     for data in valid_datasets:
-        dataset_algorithm_params[dataset]['greedy-1'] = dict(verbose=verbose, max_iterations=max_iters1)
-        dataset_algorithm_params[dataset]['greedy-2'] = dict(verbose=verbose, max_iterations=max_iters2)
+        dataset_algorithm_params[dataset]['greedy-1'] = dict(verbose=verbose, max_iterations=max_iters1,tries=tries)
+        dataset_algorithm_params[dataset]['greedy-2'] = dict(verbose=verbose, max_iterations=max_iters2,tries=tries)
         
     graphs = {}
     clusters = defaultdict(dict)
@@ -360,6 +365,10 @@ if __name__ == '__main__':
                         type=int,
                         help='max iterations to run on first greedy algorithm',
                             default=30000)
+    parser.add_argument('-t',
+                        type=int,
+                        help='number of tries to run with greedy algorithm',
+                            default=1)
     parser.add_argument('-x2',
                         type=int,
                         help='max iterations to run on second greedy algorithm',
@@ -370,5 +379,5 @@ if __name__ == '__main__':
                         default=False)
     args = parser.parse_args()
 
-    main(dataset=args.d, algorithm=args.a, verbose=args.v, max_iters1=args.x1,max_iters2=args.x2,write_clusters=args.w)
+    main(dataset=args.d, algorithm=args.a, verbose=args.v, max_iters1=args.x1,max_iters2=args.x2,write_clusters=args.w,tries=args.t)
 
