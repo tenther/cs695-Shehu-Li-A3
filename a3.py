@@ -160,7 +160,6 @@ def load_tsv_edges(data_file_name, directed=None):
     g = ig.Graph(directed=directed)
     g.add_vertices(sorted(list(V)))
     g.add_edges(list(E))
-#    g.vs["name"] = [str(v.index) for v in g.vs]
     return g
 
 def export_gephi_csv(graph, membership):
@@ -168,7 +167,7 @@ def export_gephi_csv(graph, membership):
     atts = list(g.vs.attribute_names())
     atts.remove("name")
     with open("nodes.csv", 'w') as f:
-        line = 'Id,Label,Community' + ','.join(map(str, atts))
+        line = 'Id,Label,Community,' + ','.join(map(str, atts))
         f.write(line + "\n")
         for v in g.vs:
             line = "{0},{1},{2}".format(str(v.index),v["name"],membership[v.index])
@@ -185,7 +184,13 @@ def export_gephi_csv(graph, membership):
             line = "{0},{1},{2}".format(str(s),str(t),"undirected")
             f.write(line + "\n")
 
-def do_greedy_clustering(graph, func, tries=100, max_iterations=5000, min_delta=0.0, max_no_progress=500, verbose=False):
+def do_greedy_clustering(graph, 
+                         func, 
+                         tries=100, 
+                         max_iterations=5000, 
+                         min_delta=0.0, 
+                         max_no_progress=500, 
+                         verbose=False):
     best_vc = None
     for _ in range(tries):
         vc = func(graph, max_iterations, min_delta, verbose, max_no_progress)
@@ -294,7 +299,14 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False,
 
 valid_datasets = ['facebook','wikivote','collab', 'test', 'karate',]
 
-def main(dataset=None, algorithm=None, verbose=False, max_iters1=30000, max_iters2=10000000, write_clusters=False, tries=1):
+def main(dataset=None, 
+         algorithm=None, 
+         verbose=False, 
+         max_iters1=30000, 
+         max_iters2=10000000, 
+         write_clusters=False, 
+         tries=1,
+         max_no_progress=500):
     dataset_file_name = {
         'facebook': os.path.join(*"data/egonets-Facebook/facebook_combined.txt".split("/")),
         'wikivote': os.path.join(*"data/wiki-Vote/wiki-Vote.txt".split("/")),
@@ -317,14 +329,12 @@ def main(dataset=None, algorithm=None, verbose=False, max_iters1=30000, max_iter
         'walktrap':    lambda g, kw: g.community_walktrap().as_clustering(),
         'greedy-1':    lambda g, kw: do_greedy_clustering(g, greedy_clustering, **kw),
         'greedy-2':    lambda g, kw: do_greedy_clustering(g, greedy_clustering2, **kw),
-#        'greedy-1':    lambda g, kw: greedy_clustering(g, **kw),
-#        'greedy-2':    lambda g, kw: greedy_clustering2(g, **kw),
     }
     
     dataset_algorithm_params = defaultdict(lambda: defaultdict(dict))
     for data in valid_datasets:
-        dataset_algorithm_params[dataset]['greedy-1'] = dict(verbose=verbose, max_iterations=max_iters1,tries=tries)
-        dataset_algorithm_params[dataset]['greedy-2'] = dict(verbose=verbose, max_iterations=max_iters2,tries=tries)
+        dataset_algorithm_params[dataset]['greedy-1'] = dict(verbose=verbose, max_iterations=max_iters1,tries=tries,max_no_progress=max_no_progress)
+        dataset_algorithm_params[dataset]['greedy-2'] = dict(verbose=verbose, max_iterations=max_iters2,tries=tries,max_no_progress=max_no_progress)
         
     graphs = {}
     clusters = defaultdict(dict)
@@ -342,7 +352,6 @@ def main(dataset=None, algorithm=None, verbose=False, max_iters1=30000, max_iter
             t0 = time.time()
             clusters[data][alg] = func(graphs[data], kw)
             dataset_algorithm_time[data][alg] = time.time() - t0
-#            pdb.set_trace()
 
     for data, graph in graphs.items():
         print("Graph summary for dataset {0}: {1}".format(data, graph.summary()))
@@ -394,11 +403,23 @@ if __name__ == '__main__':
                         type=int,
                         help='max iterations to run on second greedy algorithm',
                             default=10000000)
+    parser.add_argument('-c',
+                        type=int,
+                        help='max iterations with no change before assuming converged',
+                            default=500)
     parser.add_argument('-w',
                         action='store_true',
                         help='write created clusters to disk',
                         default=False)
     args = parser.parse_args()
 
-    main(dataset=args.d, algorithm=args.a, verbose=args.v, max_iters1=args.x1,max_iters2=args.x2,write_clusters=args.w,tries=args.t)
+    main(dataset=args.d, 
+         algorithm=args.a, 
+         verbose=args.v, 
+         max_iters1=args.x1,
+         max_iters2=args.x2,
+         write_clusters=args.w,
+         tries=args.t,
+         max_no_progress=args.c,
+    )
 
