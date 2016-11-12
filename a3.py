@@ -433,7 +433,6 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-
     if args.p:
         cProfile.run("""main(dataset=args.d,  algorithm=args.a,  verbose=args.v,  max_iters1=args.x1, max_iters2=args.x2, write_clusters=args.w, tries=args.t, max_no_progress=args.c, export=args.e, )""", args.p)
     else:
