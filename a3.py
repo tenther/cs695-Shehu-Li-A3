@@ -282,8 +282,6 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False,
         selected_community = mm.membership[selected_vertex]
         new_communities    = [c for c in partition_counts.keys() if c != selected_community]
         new_community      = new_communities[int(random.random() * len(new_communities))]
-#        random.shuffle(new_communities)
-#        new_community = new_communities[0]
         mm.move_community(selected_vertex, new_community)
         delta = mm.modularity - previous_modularity
         if delta > min_delta:
@@ -334,8 +332,9 @@ def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_
         if delta > min_delta:
             accept_change = True
         else:
-            p = min(math.exp(delta / alpha),1) #Have to think of how e^x works to continue this
-            r = random.random()
+#            p = min(math.exp(delta / alpha),1) #Have to think of how e^x works to continue this
+            p = 1/(float(iteration)/1000.0 + 1.0)
+            r = random.uniform(0.0, 1.0)
             if p > r:
                 accept_change = True
             else:
