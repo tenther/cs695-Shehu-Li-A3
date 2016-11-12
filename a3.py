@@ -11,6 +11,7 @@ import random
 import re
 import time
 import math
+import cProfile
 
 comments_re = re.compile(r'#.*')
 
@@ -161,7 +162,6 @@ def load_tsv_edges(data_file_name, directed=None):
     g = ig.Graph(directed=directed)
     g.add_vertices(sorted(list(V)))
     g.add_edges(list(E))
-#    g.vs["name"] = [str(v.index) for v in g.vs]
     return g
 
 def export_gephi_csv(graph, membership, nodes_filename="nodes", edges_filename="edges"):
@@ -169,7 +169,7 @@ def export_gephi_csv(graph, membership, nodes_filename="nodes", edges_filename="
     atts = list(g.vs.attribute_names())
     atts.remove("name")
     with open(nodes_filename + ".csv", 'w') as f:
-        line = 'Id,Label,Community' + ','.join(map(str, atts))
+        line = 'Id,Label,Community' + (atts and ',' or '') + ','.join(map(str, atts))
         f.write(line + "\n")
         for v in g.vs:
             line = "{0},{1},{2}".format(str(v.index),v["name"],membership[v.index])
@@ -186,7 +186,15 @@ def export_gephi_csv(graph, membership, nodes_filename="nodes", edges_filename="
             line = "{0},{1},{2}".format(str(s),str(t),"undirected")
             f.write(line + "\n")
 
-def do_greedy_clustering(graph, func, tries=100, max_iterations=5000, min_delta=0.0, max_no_progress=500, verbose=False, alpha=None):
+def do_greedy_clustering(graph, 
+                         func, 
+                         tries=100, 
+                         max_iterations=5000, 
+                         min_delta=0.0, 
+                         max_no_progress=500, 
+                         verbose=False,
+                         alpha=None):
+
     best_vc = None
     for _ in range(tries):
         vc = func(graph, max_iterations, min_delta, verbose, max_no_progress, alpha)
@@ -266,14 +274,16 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False,
 
     previous_modularity = mm.modularity
     no_progress_counter = 0
+    num_vertices = len(graph.vs) 
     for iteration in range(max_iterations):
         if no_progress_counter == max_no_progress:
             break
-        selected_vertex    = random.randint(0, len(graph.vs) - 1)
+        selected_vertex    = int(random.random() * num_vertices)
         selected_community = mm.membership[selected_vertex]
         new_communities    = [c for c in partition_counts.keys() if c != selected_community]
-        random.shuffle(new_communities)
-        new_community = new_communities[0]
+        new_community      = new_communities[int(random.random() * len(new_communities))]
+#        random.shuffle(new_communities)
+#        new_community = new_communities[0]
         mm.move_community(selected_vertex, new_community)
         delta = mm.modularity - previous_modularity
         if delta > min_delta:
@@ -350,13 +360,23 @@ def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_
 
 valid_datasets = ['facebook','wikivote','collab', 'test', 'karate',]
 
-def main(dataset=None, algorithm=None, verbose=False, max_iters1=30000, max_iters2=10000000, write_clusters=False, tries=1, export=False, alpha=1000):
+def main(dataset=None, 
+         algorithm=None, 
+         verbose=False, 
+         max_iters1=30000, 
+         max_iters2=10000000, 
+         write_clusters=False, 
+         tries=1,
+         max_no_progress=500,
+         alpha=1000,
+         export=False,
+         ):
     dataset_file_name = {
         'facebook': os.path.join(*"data/egonets-Facebook/facebook_combined.txt".split("/")),
         'wikivote': os.path.join(*"data/wiki-Vote/wiki-Vote.txt".split("/")),
         'collab':   os.path.join(*"data/ca-GrQc/ca-GrQc.txt".split("/")),
         'karate':   os.path.join(*"data/karate/karate.txt".split("/")),
-        'test':     os.path.join(*"data/test/old_test.txt".split("/")),
+        'test':     os.path.join(*"data/test/test.txt".split("/")),
     }
 
     dataset_is_directed = {
@@ -378,9 +398,9 @@ def main(dataset=None, algorithm=None, verbose=False, max_iters1=30000, max_iter
     
     dataset_algorithm_params = defaultdict(lambda: defaultdict(dict))
     for data in valid_datasets:
-        dataset_algorithm_params[dataset]['greedy-1']   = dict(verbose=verbose, max_iterations=max_iters1,tries=tries)
-        dataset_algorithm_params[dataset]['greedy-2']   = dict(verbose=verbose, max_iterations=max_iters2,tries=tries)
-        dataset_algorithm_params[dataset]['mc-cluster'] = dict(verbose=verbose, alpha=alpha,tries=tries, max_iterations=max_iters2)
+        dataset_algorithm_params[dataset]['greedy-1']   = dict(verbose=verbose, max_iterations=max_iters1, tries=tries, max_no_progress=max_no_progress)
+        dataset_algorithm_params[dataset]['greedy-2']   = dict(verbose=verbose, max_iterations=max_iters2, tries=tries, max_no_progress=max_no_progress)
+        dataset_algorithm_params[dataset]['mc-cluster'] = dict(verbose=verbose, max_iterations=max_iters2, tries=tries, max_no_progress=max_no_progress,alpha=alpha)
         
     graphs = {}
     clusters = defaultdict(dict)
@@ -460,6 +480,10 @@ if __name__ == '__main__':
                         type=float,
                         help='alpha for mc_cluster algorithm',
                             default=1000)
+    parser.add_argument('-c',
+                        type=int,
+                        help='max iterations with no change before assuming converged',
+                            default=500)
     parser.add_argument('-w',
                         action='store_true',
                         help='write created clusters to disk',
@@ -467,7 +491,24 @@ if __name__ == '__main__':
     parser.add_argument('-e',
                         action='store_true',
                         help='export Gephi spreadsheet csv file')
+    parser.add_argument('-p',
+                        type=str,
+                        default='',
+                        help='Run cProfile on main() function and store results in file provided.')
+
     args = parser.parse_args()
 
-    main(dataset=args.d, algorithm=args.a, verbose=args.v, max_iters1=args.x1,max_iters2=args.x2,write_clusters=args.w,tries=args.t,export=args.e,alpha=args.m)
-
+    if args.p:
+        cProfile.run("""main(dataset=args.d,  algorithm=args.a,  verbose=args.v,  max_iters1=args.x1, max_iters2=args.x2, write_clusters=args.w, tries=args.t, max_no_progress=args.c, export=args.e, alpha=args.m)""", args.p)
+    else:
+        main(dataset=args.d, 
+             algorithm=args.a, 
+             verbose=args.v, 
+             max_iters1=args.x1,
+             max_iters2=args.x2,
+             write_clusters=args.w,
+             tries=args.t,
+             max_no_progress=args.c,
+             export=args.e,
+             alpha=args.m,
+        )

@@ -14,7 +14,7 @@ def load_membership(graph, membership_file_name):
             membership[int(v)] = int(c)
     return membership
 
-def main(graph_file_name, membership_file_name, directed, labels=False):
+def main(graph_file_name, membership_file_name, directed, labels=False, layout_name='kk'):
 #    pdb.set_trace()
     g          = a3.load_tsv_edges(graph_file_name, directed=directed)
     membership = load_membership(g, membership_file_name)
@@ -25,8 +25,7 @@ def main(graph_file_name, membership_file_name, directed, labels=False):
     visual_style['bbox']=(600,600)
     visual_style['margin']=50
 
-    layout = g.layout_kamada_kawai()
-#    layout = g.layout_lgl()
+    layout = g.layout(layout_name)
 
     community_color = ['purple', 'green', 'light blue', 'yellow', 
                        'red', 'orange', 'pink', 'white', 
@@ -51,5 +50,9 @@ if __name__=='__main__':
                         action='store_true',
                         help='Display labels on graph',
                         default=False)
+    parser.add_argument('-y',
+                        choices=['kk', 'lgl'],
+                        help='Layout to use',
+                            default='kk')
     args = parser.parse_args()
-    main(args.g, args.m, args.d, args.l)
+    main(args.g, args.m, args.d, args.l, args.y)
