@@ -274,14 +274,25 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False,
 
     previous_modularity = mm.modularity
     no_progress_counter = 0
-    num_vertices = len(graph.vs) 
+    num_vertices = len(graph.vs)
+    empty_partitions = []
+    
     for iteration in range(max_iterations):
         if no_progress_counter == max_no_progress:
             break
         selected_vertex    = int(random.random() * num_vertices)
         selected_community = mm.membership[selected_vertex]
         new_communities    = [c for c in partition_counts.keys() if c != selected_community]
-        new_community      = new_communities[int(random.random() * len(new_communities))]
+        # Pick random index 0 to num_vertices, or 0 to num_vertices - 1 if empty_partitions is empty
+        add_one            = len(empty_partitions) != 0
+        community_index    = int(random.random() * (len(new_communities)+int(add_one)))
+        
+        if community_index == len(new_communities):
+            new_community = empty_partitions.pop()
+            partition_counts[new_community] = 0
+        else:
+            new_community = new_communities[community_index]
+            
         mm.move_community(selected_vertex, new_community)
         delta = mm.modularity - previous_modularity
         if delta > min_delta:
@@ -289,6 +300,7 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False,
             partition_counts[selected_community] -= 1
             if not partition_counts[selected_community]:
                 del(partition_counts[selected_community])
+                empty_partitions.append(selected_community)
             partition_counts[new_community] += 1
             if verbose:
                 print("Greedy clustering 2. iteration={0} modularity:={1} delta={2}.".format(iteration, mm.modularity, mm.modularity - previous_modularity))
@@ -320,6 +332,7 @@ def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_
     num_vertices = len(graph.vs)
     best_ever_modularity = float('-inf')
     best_ever_membership = []
+    empty_partitions = []
     
 #    pdb.set_trace()
     for iteration in range(max_iterations):
@@ -328,7 +341,16 @@ def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_
         selected_vertex    = int(random.random() * num_vertices)
         selected_community = mm.membership[selected_vertex]
         new_communities    = [c for c in partition_counts.keys() if c != selected_community]
-        new_community      = new_communities[int(random.random() * len(new_communities))]
+        # Pick random index 0 to num_vertices, or 0 to num_vertices - 1 if empty_partitions is empty
+        add_one            = len(empty_partitions) != 0
+        community_index    = int(random.random() * (len(new_communities)+int(add_one)))
+        
+        if community_index == len(new_communities):
+            new_community = empty_partitions.pop()
+            partition_counts[new_community] = 0
+        else:
+            new_community = new_communities[community_index]
+            
         mm.move_community(selected_vertex, new_community)
         delta = mm.modularity - previous_modularity
         p = r = 0.0  # Declaring p and r outside if statement for reporting
@@ -355,6 +377,7 @@ def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_
             partition_counts[selected_community] -= 1
             if not partition_counts[selected_community]:
                 del(partition_counts[selected_community])
+                empty_partitions.append(selected_community)
             partition_counts[new_community] += 1
             if verbose:
                 print("mc_clustering. iteration={0} modularity={1} delta={2} p={3} r={4} went_back={5}".format(iteration, mm.modularity, delta, p, r, delta < 0.0))
@@ -453,8 +476,8 @@ def main(dataset=None,
                         f.write("{0}\t{1}\n".format(i,c))
     
     if export:
-        node_filename = "nodes_{0}_{1}".format(dataset, algorithm)
-        edge_filename = "edges_{0}_{1}".format(dataset, algorithm)
+        node_filename = "gephi_exports/nodes_{0}_{1}".format(dataset, algorithm)
+        edge_filename = "gephi_exports/edges_{0}_{1}".format(dataset, algorithm)
         export_gephi_csv(clusters[data][alg].graph,clusters[data][alg].membership,node_filename,edge_filename)
         print("Exporting Gephi spreadsheet csv files: {0}.csv, {1}.csv".format(node_filename,edge_filename))
     
