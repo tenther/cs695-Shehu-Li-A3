@@ -51,7 +51,7 @@ if __name__=='__main__':
                         help='Display labels on graph',
                         default=False)
     parser.add_argument('-y',
-                        choices=['kk', 'lgl'],
+                        choices=['kk', 'lgl',],
                         help='Layout to use',
                             default='kk')
     args = parser.parse_args()

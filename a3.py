@@ -318,6 +318,9 @@ def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_
     no_progress_counter = 0
     accept_change = False
     num_vertices = len(graph.vs)
+    best_ever_modularity = float('-inf')
+    best_ever_membership = []
+    
 #    pdb.set_trace()
     for iteration in range(max_iterations):
         if no_progress_counter == max_no_progress:
@@ -341,6 +344,13 @@ def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_
                 accept_change = False
         
         if accept_change:
+            if mm.modularity > best_ever_modularity:
+                if verbose:
+                    print("mc_clustering: best modularity {0} -> {1}. Best #clusters {2} -> {3}".format(best_ever_modularity, mm.modularity,
+                                                                                                        len(set([x for x in best_ever_membership])),
+                                                                                                        len(set([x for x in mm.membership]))))
+                best_ever_modularity = mm.modularity
+                best_ever_membership = mm.membership.copy()
             no_progress_counter = 0
             partition_counts[selected_community] -= 1
             if not partition_counts[selected_community]:
@@ -354,8 +364,10 @@ def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_
             mm.revert()
     
     if verbose:
-        print("Finished mc_clustering. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
-    return VC(graph, normalize_membership(mm.membership))
+        print("Finished mc_clustering. Clustered {0} communities into {1}.".format(len(best_ever_membership), len(set(best_ever_membership))))
+    return VC(graph, normalize_membership(best_ever_membership))
+    #     print("Finished mc_clustering. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
+    # return VC(graph, normalize_membership(mm.membership))
 
 valid_datasets = ['facebook','wikivote','collab', 'test', 'karate',]
 
