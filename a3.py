@@ -10,6 +10,7 @@ import pdb
 import random
 import re
 import time
+import math
 import cProfile
 
 comments_re = re.compile(r'#.*')
@@ -191,10 +192,12 @@ def do_greedy_clustering(graph,
                          max_iterations=5000, 
                          min_delta=0.0, 
                          max_no_progress=500, 
-                         verbose=False):
+                         verbose=False,
+                         alpha=None):
+
     best_vc = None
     for _ in range(tries):
-        vc = func(graph, max_iterations, min_delta, verbose, max_no_progress)
+        vc = func(graph, max_iterations, min_delta, verbose, max_no_progress, alpha)
         if not best_vc or vc.modularity > best_vc.modularity:
             best_vc = vc
     return best_vc
@@ -206,7 +209,15 @@ def normalize_membership(membership):
                           range(len(communities))))
     return [old_to_new[x] for x in membership]
 
-def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=0):
+def generate_random_membership(n, max_communities=float('inf')):
+    membership = []
+    if max_communities > n:
+        max_communities = n
+    for i in range(n):
+        membership.append(int(random.random() * max_communities))
+    return normalize_membership(membership)
+
+def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=0, alpha=0.0):
     VC = ig.VertexClustering
     # start with each vertex in its own commuanity
     mm = ModularityMaintainer(graph, [i for i, _ in enumerate(graph.vs)])
@@ -256,7 +267,7 @@ def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, 
         print("Finished greedy_clustering. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
     return VC(graph, normalize_membership(mm.membership))
 
-def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=500):
+def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=500, alpha=0.0):
     VC = ig.VertexClustering
     # start with each vertex in its own commuanity
     mm = ModularityMaintainer(graph, [i for i, _ in enumerate(graph.vs)])
@@ -271,16 +282,25 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False,
 
     previous_modularity = mm.modularity
     no_progress_counter = 0
-    num_vertices = len(graph.vs) 
+    num_vertices = len(graph.vs)
+    empty_partitions = []
+    
     for iteration in range(max_iterations):
         if no_progress_counter == max_no_progress:
             break
         selected_vertex    = int(random.random() * num_vertices)
         selected_community = mm.membership[selected_vertex]
         new_communities    = [c for c in partition_counts.keys() if c != selected_community]
-        new_community      = new_communities[int(random.random() * len(new_communities))]
-#        random.shuffle(new_communities)
-#        new_community = new_communities[0]
+        # Pick random index 0 to num_vertices, or 0 to num_vertices - 1 if empty_partitions is empty
+        add_one            = len(empty_partitions) != 0
+        community_index    = int(random.random() * (len(new_communities)+int(add_one)))
+        
+        if community_index == len(new_communities):
+            new_community = empty_partitions.pop()
+            partition_counts[new_community] = 0
+        else:
+            new_community = new_communities[community_index]
+            
         mm.move_community(selected_vertex, new_community)
         delta = mm.modularity - previous_modularity
         if delta > min_delta:
@@ -288,6 +308,7 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False,
             partition_counts[selected_community] -= 1
             if not partition_counts[selected_community]:
                 del(partition_counts[selected_community])
+                empty_partitions.append(selected_community)
             partition_counts[new_community] += 1
             if verbose:
                 print("Greedy clustering 2. iteration={0} modularity:={1} delta={2}.".format(iteration, mm.modularity, mm.modularity - previous_modularity))
@@ -300,6 +321,85 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False,
         print("Finished greedy_clustering2. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
     return VC(graph, normalize_membership(mm.membership))
 
+def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=500, alpha=1000.0):
+    VC = ig.VertexClustering
+    # start with each vertex in its own commuanity
+    mm = ModularityMaintainer(graph, [i for i, _ in enumerate(graph.vs)])
+
+    partition_vertexes = defaultdict(set)
+    for i, p in enumerate(mm.membership):
+        partition_vertexes[p].add(i)
+
+    partition_counts = dict()
+    for i, s in partition_vertexes.items():
+        partition_counts[i] = len(s)
+
+    previous_modularity = mm.modularity
+    no_progress_counter = 0
+    accept_change = False
+    num_vertices = len(graph.vs)
+    best_ever_modularity = float('-inf')
+    best_ever_membership = []
+    empty_partitions = []
+    
+#    pdb.set_trace()
+    for iteration in range(max_iterations):
+        if no_progress_counter == max_no_progress:
+            break
+        selected_vertex    = int(random.random() * num_vertices)
+        selected_community = mm.membership[selected_vertex]
+        new_communities    = [c for c in partition_counts.keys() if c != selected_community]
+        # Pick random index 0 to num_vertices, or 0 to num_vertices - 1 if empty_partitions is empty
+        add_one            = len(empty_partitions) != 0
+        community_index    = int(random.random() * (len(new_communities)+int(add_one)))
+        
+        if community_index == len(new_communities):
+            new_community = empty_partitions.pop()
+            partition_counts[new_community] = 0
+        else:
+            new_community = new_communities[community_index]
+            
+        mm.move_community(selected_vertex, new_community)
+        delta = mm.modularity - previous_modularity
+        p = r = 0.0  # Declaring p and r outside if statement for reporting
+        if delta > min_delta:
+            accept_change = True
+        else:
+#            p = min(math.exp(delta / alpha),1) #Have to think of how e^x works to continue this
+            p = 1/(float(iteration)/1000.0 + 1.0)
+            r = random.uniform(0.0, 1.0)
+            if p > r:
+                accept_change = True
+            else:
+                accept_change = False
+        
+        if accept_change:
+            if mm.modularity > best_ever_modularity:
+                if verbose:
+                    print("mc_clustering: best modularity {0} -> {1}. Best #clusters {2} -> {3}".format(best_ever_modularity, mm.modularity,
+                                                                                                        len(set([x for x in best_ever_membership])),
+                                                                                                        len(set([x for x in mm.membership]))))
+                best_ever_modularity = mm.modularity
+                best_ever_membership = mm.membership.copy()
+            no_progress_counter = 0
+            partition_counts[selected_community] -= 1
+            if not partition_counts[selected_community]:
+                del(partition_counts[selected_community])
+                empty_partitions.append(selected_community)
+            partition_counts[new_community] += 1
+            if verbose:
+                print("mc_clustering. iteration={0} modularity={1} delta={2} p={3} r={4} went_back={5}".format(iteration, mm.modularity, delta, p, r, delta < 0.0))
+            previous_modularity = mm.modularity
+        else:
+            no_progress_counter += 1
+            mm.revert()
+    
+    if verbose:
+        print("Finished mc_clustering. Clustered {0} communities into {1}.".format(len(best_ever_membership), len(set(best_ever_membership))))
+    return VC(graph, normalize_membership(best_ever_membership))
+    #     print("Finished mc_clustering. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
+    # return VC(graph, normalize_membership(mm.membership))
+
 valid_datasets = ['facebook','wikivote','collab', 'test', 'karate',]
 
 def main(dataset=None, 
@@ -310,7 +410,9 @@ def main(dataset=None,
          write_clusters=False, 
          tries=1,
          max_no_progress=500,
-         export=False):
+         alpha=1000,
+         export=False,
+         ):
     dataset_file_name = {
         'facebook': os.path.join(*"data/egonets-Facebook/facebook_combined.txt".split("/")),
         'wikivote': os.path.join(*"data/wiki-Vote/wiki-Vote.txt".split("/")),
@@ -333,12 +435,14 @@ def main(dataset=None,
         'walktrap':    lambda g, kw: g.community_walktrap().as_clustering(),
         'greedy-1':    lambda g, kw: do_greedy_clustering(g, greedy_clustering, **kw),
         'greedy-2':    lambda g, kw: do_greedy_clustering(g, greedy_clustering2, **kw),
+        'mc-cluster':  lambda g, kw: do_greedy_clustering(g, mc_clustering, **kw),
     }
     
     dataset_algorithm_params = defaultdict(lambda: defaultdict(dict))
     for data in valid_datasets:
-        dataset_algorithm_params[dataset]['greedy-1'] = dict(verbose=verbose, max_iterations=max_iters1,tries=tries,max_no_progress=max_no_progress)
-        dataset_algorithm_params[dataset]['greedy-2'] = dict(verbose=verbose, max_iterations=max_iters2,tries=tries,max_no_progress=max_no_progress)
+        dataset_algorithm_params[dataset]['greedy-1']   = dict(verbose=verbose, max_iterations=max_iters1, tries=tries, max_no_progress=max_no_progress)
+        dataset_algorithm_params[dataset]['greedy-2']   = dict(verbose=verbose, max_iterations=max_iters2, tries=tries, max_no_progress=max_no_progress)
+        dataset_algorithm_params[dataset]['mc-cluster'] = dict(verbose=verbose, max_iterations=max_iters2, tries=tries, max_no_progress=max_no_progress,alpha=alpha)
         
     graphs = {}
     clusters = defaultdict(dict)
@@ -380,8 +484,8 @@ def main(dataset=None,
                         f.write("{0}\t{1}\n".format(i,c))
     
     if export:
-        node_filename = "nodes_{0}_{1}".format(dataset, algorithm)
-        edge_filename = "edges_{0}_{1}".format(dataset, algorithm)
+        node_filename = "gephi_exports/nodes_{0}_{1}".format(dataset, algorithm)
+        edge_filename = "gephi_exports/edges_{0}_{1}".format(dataset, algorithm)
         export_gephi_csv(clusters[data][alg].graph,clusters[data][alg].membership,node_filename,edge_filename)
         print("Exporting Gephi spreadsheet csv files: {0}.csv, {1}.csv".format(node_filename,edge_filename))
     
@@ -395,7 +499,7 @@ if __name__ == '__main__':
                         help='Dataset to process',
                         default=None)
     parser.add_argument('-a',
-                        choices=['eigenvector', 'walktrap', 'greedy-1', 'greedy-2', 'betweenness',],
+                        choices=['eigenvector', 'walktrap', 'greedy-1', 'greedy-2', 'betweenness', 'mc-cluster'],
                         help='Algorithm to run on dataset',
                             default=None)
     parser.add_argument('-v',
@@ -414,6 +518,10 @@ if __name__ == '__main__':
                         type=int,
                         help='max iterations to run on second greedy algorithm',
                             default=10000000)
+    parser.add_argument('-m',
+                        type=float,
+                        help='alpha for mc_cluster algorithm',
+                            default=1000)
     parser.add_argument('-c',
                         type=int,
                         help='max iterations with no change before assuming converged',
@@ -425,7 +533,6 @@ if __name__ == '__main__':
     parser.add_argument('-e',
                         action='store_true',
                         help='export Gephi spreadsheet csv file')
-
     parser.add_argument('-p',
                         type=str,
                         default='',
@@ -434,7 +541,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.p:
-        cProfile.run("""main(dataset=args.d,  algorithm=args.a,  verbose=args.v,  max_iters1=args.x1, max_iters2=args.x2, write_clusters=args.w, tries=args.t, max_no_progress=args.c, export=args.e, )""", args.p)
+        cProfile.run("""main(dataset=args.d,  algorithm=args.a,  verbose=args.v,  max_iters1=args.x1, max_iters2=args.x2, write_clusters=args.w, tries=args.t, max_no_progress=args.c, export=args.e, alpha=args.m)""", args.p)
     else:
         main(dataset=args.d, 
              algorithm=args.a, 
@@ -445,4 +552,5 @@ if __name__ == '__main__':
              tries=args.t,
              max_no_progress=args.c,
              export=args.e,
+             alpha=args.m,
         )
