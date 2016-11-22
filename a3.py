@@ -209,6 +209,14 @@ def normalize_membership(membership):
                           range(len(communities))))
     return [old_to_new[x] for x in membership]
 
+def generate_random_membership(n, max_communities=float('inf')):
+    membership = []
+    if max_communities > n:
+        max_communities = n
+    for i in range(n):
+        membership.append(int(random.random() * max_communities))
+    return normalize_membership(membership)
+
 def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=0, alpha=0.0):
     VC = ig.VertexClustering
     # start with each vertex in its own commuanity
