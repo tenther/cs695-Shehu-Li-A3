@@ -81,14 +81,13 @@ class ModularityMaintainer(object):
         self.adj         = adj
         self.previous    = None
 
-    def copy(self):
-        other             = copy.copy(self)
-        other.membership  = self.membership.copy()
-        other.e           = self.e.copy()
-        other.a           = self.a.copy()
-        other.m           = self.m.copy()
-        other.previous    = copy.deepcopy(self.previous)
-        return other
+    def copy(self, other):
+        self.membership  = other.membership.copy()
+        self.e           = other.e.copy()
+        self.a           = other.a.copy()
+        self.m           = other.m.copy()
+        self.previous    = other.previous
+        return self
 
     def move_community(self, v, new_community):
         a = self.a
@@ -114,7 +113,15 @@ class ModularityMaintainer(object):
         c1 = membership[v]
 
         # Store previous from and to communities, and the prior a,e,m values.
-        self.previous = (v, c1, a[c1], e[c1], m[c1], new_community, a[new_community], e[new_community], m[new_community])
+        self.previous = (v, 
+                         c1, 
+                         a[c1],
+                         e[c1], 
+                         m[c1], 
+                         new_community, 
+                         a[new_community], 
+                         e[new_community], 
+                         m[new_community])
 
         if c1 == new_community:
             raise Exception("Moving node to it's current community ({0} -> {1}) will likely break move_community".format(c1, new_community))
@@ -424,15 +431,28 @@ class EA_Mutator():
 
         self.empty_partitions = []
 
-    def copy(self):
-        other = copy.copy(self)
-
+    def copy(self, other):
         # explicitly copy the things that would have
         # only be reference copies
-        other.mm                 = self.mm.copy()
-        other.partition_vertexes = copy.deepcopy(self.partition_vertexes)
-        other.partition_counts   = self.partition_counts.copy()
-        other.empty_partitions   = self.empty_partitions.copy()
+        self.mm.copy(other.mm)
+
+        # Update things that are different in partition_vertexes. This
+        # is much faster than copying, especially deep copying.
+        for p, v in other.partition_vertexes.items():
+            if (p not in self.partition_vertexes or
+#                self.partition_counts[p] != other.partition_counts[p] or
+                self.partition_vertexes[p] != v):
+                self.partition_vertexes[p] = set(v)
+
+        # Make seperate list of kets to avoid dict mutation
+        my_partitions = list(self.partition_vertexes.keys())
+        for p in my_partitions:
+            if p not in other.partition_vertexes:
+                del(self.partition_vertexes[p])
+
+        self.partition_counts   = other.partition_counts.copy()
+
+        self.empty_partitions   = other.empty_partitions.copy()
         return other
 
     def mutate(self):
@@ -461,11 +481,15 @@ class EA_Mutator():
         # Return self to let chaining work below. Big win ;)
         return self
 
-def ea_clustering(graph, n=10, max_iterations=5000, verbose=False):
+def ea_clustering(graph, n=50, max_iterations=5000, verbose=False):
 #    pdb.set_trace()
     # setup initial population
     population = []
     num_vertices = len(graph.vs)
+    if n%2 != 0:
+        raise Exception("Number of vertices in ea_clustering must be even, not {0}".format(n))
+    halfway_index = int(n/2)
+
 
     modularity_key = lambda m: m.mm.modularity
 
@@ -474,11 +498,16 @@ def ea_clustering(graph, n=10, max_iterations=5000, verbose=False):
         population.append(EA_Mutator(graph, generate_random_membership(num_vertices)))
 
     for i in range(max_iterations):
-        population = sorted(population, reverse=True, key=modularity_key)[:int(n/2)]
+        population.sort(reverse=True, key=modularity_key)
+        # copying whole objects is slow, so use custom copy functions
+        for m_idx in range(halfway_index, n):
+            population[m_idx].copy(population[m_idx - halfway_index])
+            population[m_idx].mutate()
+        
         if i%100 == 0:
             print("ea_clustering: iteration {0}/{1}. Best modularity {2}".format(i,max_iterations, population[0].mm.modularity))
-        new_population = [m.copy().mutate() for m in population]
-        population = population + new_population
+#        new_population = [m.copy().mutate() for m in population]
+#        population = population + new_population
 
     population.sort(reverse=True, key=modularity_key)
     best = population[0].mm.membership.copy()
