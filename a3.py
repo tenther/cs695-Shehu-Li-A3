@@ -1,7 +1,7 @@
 #!/usr/bin/python3 -u
 from __future__ import division
 import argparse
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 import functools
 import glob
 import igraph as ig
@@ -12,6 +12,9 @@ import re
 import time
 import math
 import cProfile
+import copy
+
+VC = ig.VertexClustering
 
 comments_re = re.compile(r'#.*')
 
@@ -77,6 +80,15 @@ class ModularityMaintainer(object):
         self.m           = m
         self.adj         = adj
         self.previous    = None
+
+    def copy(self):
+        other             = copy.copy(self)
+        other.membership  = self.membership.copy()
+        other.e           = self.e.copy()
+        other.a           = self.a.copy()
+        other.m           = self.m.copy()
+        other.previous    = copy.deepcopy(self.previous)
+        return other
 
     def move_community(self, v, new_community):
         a = self.a
@@ -218,7 +230,6 @@ def generate_random_membership(n, max_communities=float('inf')):
     return normalize_membership(membership)
 
 def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=0, alpha=0.0):
-    VC = ig.VertexClustering
     # start with each vertex in its own commuanity
     mm = ModularityMaintainer(graph, [i for i, _ in enumerate(graph.vs)])
 
@@ -268,7 +279,6 @@ def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, 
     return VC(graph, normalize_membership(mm.membership))
 
 def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=500, alpha=0.0):
-    VC = ig.VertexClustering
     # start with each vertex in its own commuanity
     mm = ModularityMaintainer(graph, [i for i, _ in enumerate(graph.vs)])
 
@@ -322,7 +332,6 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False,
     return VC(graph, normalize_membership(mm.membership))
 
 def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=500, alpha=1000.0):
-    VC = ig.VertexClustering
     # start with each vertex in its own commuanity
     mm = ModularityMaintainer(graph, [i for i, _ in enumerate(graph.vs)])
 
@@ -342,7 +351,6 @@ def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_
     best_ever_membership = []
     empty_partitions = []
     
-#    pdb.set_trace()
     for iteration in range(max_iterations):
         if no_progress_counter == max_no_progress:
             break
@@ -400,6 +408,84 @@ def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_
     #     print("Finished mc_clustering. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
     # return VC(graph, normalize_membership(mm.membership))
 
+class EA_Mutator():
+    def __init__(self, graph, membership):
+        self.graph = graph
+        self.num_vertices = len(graph.vs)                                       
+        self.mm = ModularityMaintainer(graph, membership)
+
+        self.partition_vertexes = defaultdict(set)
+        for i, p in enumerate(self.mm.membership):
+            self.partition_vertexes[p].add(i)
+
+        self.partition_counts = dict()
+        for i, s in self.partition_vertexes.items():
+            self.partition_counts[i] = len(s)
+
+        self.empty_partitions = []
+
+    def copy(self):
+        other = copy.copy(self)
+
+        # explicitly copy the things that would have
+        # only be reference copies
+        other.mm                 = self.mm.copy()
+        other.partition_vertexes = copy.deepcopy(self.partition_vertexes)
+        other.partition_counts   = self.partition_counts.copy()
+        other.empty_partitions   = self.empty_partitions.copy()
+        return other
+
+    def mutate(self):
+        selected_vertex    = int(random.random() * self.num_vertices)
+        selected_community = self.mm.membership[selected_vertex]
+        new_communities    = [c for c in self.partition_counts.keys() if c != selected_community]
+
+        # Pick random index 0 to num_vertices, or 0 to num_vertices - 1 if empty_partitions is empty
+        add_one            = len(self.empty_partitions) != 0
+        community_index    = int(random.random() * (len(new_communities)+int(add_one)))
+        
+        if community_index == len(new_communities):
+            new_community = self.empty_partitions.pop()
+            self.partition_counts[new_community] = 0
+        else:
+            new_community = new_communities[community_index]
+            
+        self.mm.move_community(selected_vertex, new_community)
+
+        self.partition_counts[selected_community] -= 1
+        if not self.partition_counts[selected_community]:
+            del(self.partition_counts[selected_community])
+            self.empty_partitions.append(selected_community)
+        self.partition_counts[new_community] += 1
+
+        # Return self to let chaining work below. Big win ;)
+        return self
+
+def ea_clustering(graph, n=10, max_iterations=5000, verbose=False):
+#    pdb.set_trace()
+    # setup initial population
+    population = []
+    num_vertices = len(graph.vs)
+
+    modularity_key = lambda m: m.mm.modularity
+
+    for i in range(n):
+        print(i)
+        population.append(EA_Mutator(graph, generate_random_membership(num_vertices)))
+
+    for i in range(max_iterations):
+        population = sorted(population, reverse=True, key=modularity_key)[:int(n/2)]
+        if i%100 == 0:
+            print("ea_clustering: iteration {0}/{1}. Best modularity {2}".format(i,max_iterations, population[0].mm.modularity))
+        new_population = [m.copy().mutate() for m in population]
+        population = population + new_population
+
+    population.sort(reverse=True, key=modularity_key)
+    best = population[0].mm.membership.copy()
+    if verbose:
+        print("Finished ea_clustering. Clustered into {0} communities.".format(len(set(best))))
+    return VC(graph, normalize_membership(best))
+    
 valid_datasets = ['facebook','wikivote','collab', 'test', 'karate',]
 
 def main(dataset=None, 
@@ -436,6 +522,7 @@ def main(dataset=None,
         'greedy-1':    lambda g, kw: do_greedy_clustering(g, greedy_clustering, **kw),
         'greedy-2':    lambda g, kw: do_greedy_clustering(g, greedy_clustering2, **kw),
         'mc-cluster':  lambda g, kw: do_greedy_clustering(g, mc_clustering, **kw),
+        'ea-cluster':  lambda g, kw: ea_clustering(g, **kw),
     }
     
     dataset_algorithm_params = defaultdict(lambda: defaultdict(dict))
@@ -443,6 +530,7 @@ def main(dataset=None,
         dataset_algorithm_params[dataset]['greedy-1']   = dict(verbose=verbose, max_iterations=max_iters1, tries=tries, max_no_progress=max_no_progress)
         dataset_algorithm_params[dataset]['greedy-2']   = dict(verbose=verbose, max_iterations=max_iters2, tries=tries, max_no_progress=max_no_progress)
         dataset_algorithm_params[dataset]['mc-cluster'] = dict(verbose=verbose, max_iterations=max_iters2, tries=tries, max_no_progress=max_no_progress,alpha=alpha)
+        dataset_algorithm_params[dataset]['ea-cluster'] = dict(verbose=verbose, max_iterations=max_iters2)
         
     graphs = {}
     clusters = defaultdict(dict)
@@ -475,7 +563,7 @@ def main(dataset=None,
                 params = ""
                 if alg == 'greedy-1':
                     params = '{0}_'.format(max_iters1)
-                if alg == 'greedy-2':
+                if alg in ('greedy-2', 'mc-cluster', 'ea-cluster'):
                     params = '{0}_'.format(max_iters2)
                 file_name = time.strftime("data/community_{0}_{1}_{2}%y-%m-%d_%H-%M-%S.txt".format(data, alg, params))
                 print("Writing {0}".format(file_name))
@@ -499,7 +587,7 @@ if __name__ == '__main__':
                         help='Dataset to process',
                         default=None)
     parser.add_argument('-a',
-                        choices=['eigenvector', 'walktrap', 'greedy-1', 'greedy-2', 'betweenness', 'mc-cluster'],
+                        choices=['eigenvector', 'walktrap', 'greedy-1', 'greedy-2', 'betweenness', 'mc-cluster', 'ea-cluster'],
                         help='Algorithm to run on dataset',
                             default=None)
     parser.add_argument('-v',
