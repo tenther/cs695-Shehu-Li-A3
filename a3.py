@@ -82,7 +82,12 @@ class ModularityMaintainer(object):
         self.previous    = None
 
     def copy(self, other):
+        self.graph       = other.graph
         self.membership  = other.membership.copy()
+        self.edges       = other.edges
+        self.no_of_edges = other.no_of_edges
+        self.no_of_comms = other.no_of_comms
+        self.modularity  = other.modularity
         self.e           = other.e.copy()
         self.a           = other.a.copy()
         self.m           = other.m.copy()
@@ -113,22 +118,25 @@ class ModularityMaintainer(object):
         c1 = membership[v]
 
         # Store previous from and to communities, and the prior a,e,m values.
-        self.previous = (v, 
-                         c1, 
-                         a[c1],
-                         e[c1], 
-                         m[c1], 
-                         new_community, 
-                         a[new_community], 
-                         e[new_community], 
-                         m[new_community])
-
+        try:
+            self.previous = (v, 
+                             c1, 
+                             a[c1],
+                             e[c1], 
+                             m[c1], 
+                             new_community, 
+                             a[new_community], 
+                             e[new_community], 
+                             m[new_community])
+        except Exception as e:
+            pdb.set_trace()
+            raise
+            
         if c1 == new_community:
             raise Exception("Moving node to it's current community ({0} -> {1}) will likely break move_community".format(c1, new_community))
 
         for v2 in adj[v]:
             c2 = membership[v2]
-
             if c1 == c2:
                 e[c1] -= 2.0
             if c2 == new_community:
@@ -420,14 +428,9 @@ class EA_Mutator():
         self.graph = graph
         self.num_vertices = len(graph.vs)                                       
         self.mm = ModularityMaintainer(graph, membership)
-
-        self.partition_vertexes = defaultdict(set)
-        for i, p in enumerate(self.mm.membership):
-            self.partition_vertexes[p].add(i)
-
-        self.partition_counts = dict()
-        for i, s in self.partition_vertexes.items():
-            self.partition_counts[i] = len(s)
+        self.partition_counts = defaultdict(int)
+        for p in self.mm.membership:
+            self.partition_counts[p] += 1
 
         self.empty_partitions = []
 
@@ -435,30 +438,27 @@ class EA_Mutator():
         # explicitly copy the things that would have
         # only be reference copies
         self.mm.copy(other.mm)
-
-        # Update things that are different in partition_vertexes. This
-        # is much faster than copying, especially deep copying.
-        for p, v in other.partition_vertexes.items():
-            if (p not in self.partition_vertexes or
-#                self.partition_counts[p] != other.partition_counts[p] or
-                self.partition_vertexes[p] != v):
-                self.partition_vertexes[p] = set(v)
-
-        # Make seperate list of kets to avoid dict mutation
-        my_partitions = list(self.partition_vertexes.keys())
-        for p in my_partitions:
-            if p not in other.partition_vertexes:
-                del(self.partition_vertexes[p])
-
         self.partition_counts   = other.partition_counts.copy()
-
         self.empty_partitions   = other.empty_partitions.copy()
-        return other
+
+        # # Update things that are different in partition_vertexes. This
+        # # is much faster than copying, especially deep copying.
+        # for p, v in other.partition_vertexes.items():
+        #     if (p not in self.partition_vertexes or
+        #         self.partition_vertexes[p] != v):
+        #         self.partition_vertexes[p] = set(v)
+
+        # # Make seperate list of kets to avoid dict mutation
+        # my_partitions = list(self.partition_vertexes.keys())
+        # for p in my_partitions:
+        #     if p not in other.partition_vertexes:
+        #         del(self.partition_vertexes[p])
+
 
     def mutate(self):
         selected_vertex    = int(random.random() * self.num_vertices)
         selected_community = self.mm.membership[selected_vertex]
-        new_communities    = [c for c in self.partition_counts.keys() if c != selected_community]
+        new_communities    = [c for c, n in self.partition_counts.items() if n and c != selected_community]
 
         # Pick random index 0 to num_vertices, or 0 to num_vertices - 1 if empty_partitions is empty
         add_one            = len(self.empty_partitions) != 0
@@ -478,9 +478,6 @@ class EA_Mutator():
             self.empty_partitions.append(selected_community)
         self.partition_counts[new_community] += 1
 
-        # Return self to let chaining work below. Big win ;)
-        return self
-
 def ea_clustering(graph, n=50, max_iterations=5000, verbose=False):
 #    pdb.set_trace()
     # setup initial population
@@ -499,6 +496,10 @@ def ea_clustering(graph, n=50, max_iterations=5000, verbose=False):
 
     for i in range(max_iterations):
         population.sort(reverse=True, key=modularity_key)
+        if population[0].mm.modularity == population[-1].mm.modularity:
+            if verbose:
+                "ea_clustering: converged"
+            break
         # copying whole objects is slow, so use custom copy functions
         for m_idx in range(halfway_index, n):
             population[m_idx].copy(population[m_idx - halfway_index])
