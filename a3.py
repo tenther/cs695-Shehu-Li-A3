@@ -13,6 +13,7 @@ import time
 import math
 import cProfile
 import copy
+import multiprocessing as mp
 
 VC = ig.VertexClustering
 
@@ -220,14 +221,20 @@ def do_greedy_clustering(graph,
                          min_delta=0.0, 
                          max_no_progress=500, 
                          verbose=False,
-                         alpha=None):
+                         alpha=None,
+                         max_children=8,):
 
-    best_vc = None
-    for _ in range(tries):
-        vc = func(graph, max_iterations, min_delta, verbose, max_no_progress, alpha)
-        if not best_vc or vc.modularity > best_vc.modularity:
-            best_vc = vc
-    return best_vc
+    # best_vc = None
+    # for _ in range(tries):
+    #     vc = func(graph, max_iterations, min_delta, verbose, max_no_progress, alpha)
+    #     if not best_vc or vc.modularity > best_vc.modularity:
+    #         best_vc = vc
+
+    results = None
+    with mp.Pool() as p:
+        results = p.starmap(func, [(graph, max_iterations, min_delta, verbose, max_no_progress, alpha) for _ in range(tries)])
+
+    return max(results, key=lambda r: r.modularity)
 
 # Make communities indexed from 0
 def normalize_membership(membership):
@@ -348,6 +355,7 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False,
 
 def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=500, alpha=1000.0):
     # start with each vertex in its own commuanity
+    print("mc_clustering: alpha={0}".format(alpha))
     mm = ModularityMaintainer(graph, [i for i, _ in enumerate(graph.vs)])
 
     partition_vertexes = defaultdict(set)
@@ -388,8 +396,8 @@ def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_
         if delta > min_delta:
             accept_change = True
         else:
-#            p = min(math.exp(delta / alpha),1) #Have to think of how e^x works to continue this
-            p = 1/(float(iteration)/1000.0 + 1.0)
+            p = min(math.exp(delta / alpha * iteration),1) #Have to think of how e^x works to continue this
+#            p = 1/(float(iteration)/1000.0 + 1.0)
             r = random.uniform(0.0, 1.0)
             if p > r:
                 accept_change = True
@@ -463,43 +471,64 @@ class EA_Mutator():
                 self.empty_partitions.append(selected_community)
             self.partition_counts[new_community] += 1
 
-def ea_clustering(graph, n=50, max_iterations=5000, verbose=False):
+def do_ea_work(m_target, m_source):
+    m_target.copy(m_source)
+    m_target.mutate(1)
+    return m_target
+
+def ea_clustering(graph, n=100, max_iterations=5000, verbose=False):
     # setup initial population
     population = []
     num_vertices = len(graph.vs)
-    if n%2 != 0:
-        raise Exception("Number of vertices in ea_clustering must be even, not {0}".format(n))
-    halfway_index = int(n/2)
-
     modularity_key = lambda m: m.mm.modularity
 
-    for i in range(n):
-        print(i)
+    # Preallocate 2n individuals in population, so we can resuse objects.
+    print("ea_clustering: Allocating population of size 2*n={0}".format(2*n))
+    for i in range(2*n):
         population.append(EA_Mutator(graph, generate_random_membership(num_vertices)))
 
-    for i in range(max_iterations):
-        population.sort(reverse=True, key=modularity_key)
+    if True:
+        for i in range(max_iterations):
+            population.sort(reverse=True, key=modularity_key)
 
-        if population[0].mm.modularity == population[-1].mm.modularity:
-            if verbose:
-                "ea_clustering: converged"
-            break
-        # copying whole objects is slow, so use custom copy functions and copy better
-        # mutators over to existing ones that are poorer.
-        for m_idx in range(halfway_index, n):
-            population[m_idx].copy(population[m_idx - halfway_index])
-            population[m_idx].mutate(1)
-        
-        if i%100 == 0:
-            print("ea_clustering: iteration {0}/{1}. Best modularity {2}".format(i,max_iterations, population[0].mm.modularity))
-#        new_population = [m.copy().mutate() for m in population]
-#        population = population + new_population
+            if population[0].mm.modularity == population[n-1].mm.modularity:
+                if verbose:
+                    print("ea_clustering: converged")
+                break
+            # copying whole objects is slow, so use custom copy functions and copy better
+            # mutators over to existing ones that are poorer.
+
+            for m_idx in range(n, 2*n):
+                population[m_idx].copy(population[m_idx - n])
+                population[m_idx].mutate(1)
+
+            if i%100 == 0:
+                print("ea_clustering: iteration {0}/{1}. Best modularity {2}".format(i,max_iterations, population[0].mm.modularity))
+    else:
+        # Experiment with parallel processing
+        with mp.Pool() as p:
+            for i in range(max_iterations):
+                population.sort(reverse=True, key=modularity_key)
+
+                if population[0].mm.modularity == population[n-1].mm.modularity:
+                    if verbose:
+                        "ea_clustering: converged"
+                    break
+                # copying whole objects is slow, so use custom copy functions and copy better
+                # mutators over to existing ones that are poorer.
+
+                args = [(population[m_idx], population[m_idx-n]) for m_idx in range(n, 2*n)]
+                new_population = p.starmap(do_ea_work, args)
+                population = population[:n] + new_population
+                if i%100 == 0:
+                    print("ea_clustering: iteration {0}/{1}. Best modularity {2}".format(i,max_iterations, population[0].mm.modularity))
 
     population.sort(reverse=True, key=modularity_key)
     best = population[0].mm.membership.copy()
     if verbose:
         print("Finished ea_clustering. Clustered into {0} communities.".format(len(set(best))))
     return VC(graph, normalize_membership(best))
+
     
 valid_datasets = ['facebook','wikivote','collab', 'test', 'karate',]
 
@@ -545,7 +574,7 @@ def main(dataset=None,
         dataset_algorithm_params[dataset]['greedy-1']   = dict(verbose=verbose, max_iterations=max_iters1, tries=tries, max_no_progress=max_no_progress)
         dataset_algorithm_params[dataset]['greedy-2']   = dict(verbose=verbose, max_iterations=max_iters2, tries=tries, max_no_progress=max_no_progress)
         dataset_algorithm_params[dataset]['mc-cluster'] = dict(verbose=verbose, max_iterations=max_iters2, tries=tries, max_no_progress=max_no_progress,alpha=alpha)
-        dataset_algorithm_params[dataset]['ea-cluster'] = dict(verbose=verbose, max_iterations=max_iters2)
+        dataset_algorithm_params[dataset]['ea-cluster'] = dict(verbose=verbose, max_iterations=max_iters2, n=tries)
         
     graphs = {}
     clusters = defaultdict(dict)
