@@ -13,6 +13,7 @@ import time
 import math
 import cProfile
 import copy
+import itertools
 
 VC = ig.VertexClustering
 
@@ -229,6 +230,14 @@ def do_greedy_clustering(graph,
             best_vc = vc
     return best_vc
 
+def stats_from_modularity_data(data):
+    stats_prep = list(itertools.zip_longest(*data))
+    stats = []
+    for line in stats_prep:
+        clean_line = [x for x in line if x is not None]
+        stats.append([max(clean_line), sum(clean_line) / len(clean_line)])
+    return stats
+
 # Make communities indexed from 0
 def normalize_membership(membership):
     communities = set(membership)
@@ -236,6 +245,7 @@ def normalize_membership(membership):
                           range(len(communities))))
     return [old_to_new[x] for x in membership]
 
+# Expected data format - rows: run, column: iteration
 def generate_random_membership(n, max_communities=float('inf')):
     membership = []
     if max_communities > n:
@@ -296,6 +306,7 @@ def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, 
 def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=500, alpha=0.0):
     # start with each vertex in its own commuanity
     mm = ModularityMaintainer(graph, [i for i, _ in enumerate(graph.vs)])
+    modularity_vals_for_run = []
 
     partition_vertexes = defaultdict(set)
     for i, p in enumerate(mm.membership):
@@ -341,14 +352,17 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False,
         else:
             no_progress_counter += 1
             mm.revert()
+        if iteration % 100 == 0:
+            modularity_vals_for_run.append(mm.modularity)
     
     if verbose:
         print("Finished greedy_clustering2. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
-    return VC(graph, normalize_membership(mm.membership))
+    return VC(graph, normalize_membership(mm.membership)), modularity_vals_for_run
 
 def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=500, alpha=1000.0):
     # start with each vertex in its own commuanity
     mm = ModularityMaintainer(graph, [i for i, _ in enumerate(graph.vs)])
+    modularity_vals_for_run = []
 
     partition_vertexes = defaultdict(set)
     for i, p in enumerate(mm.membership):
@@ -416,10 +430,12 @@ def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_
         else:
             no_progress_counter += 1
             mm.revert()
+        if iteration % 100 == 0:
+            modularity_vals_for_run.append(mm.modularity)
     
     if verbose:
         print("Finished mc_clustering. Clustered {0} communities into {1}.".format(len(best_ever_membership), len(set(best_ever_membership))))
-    return VC(graph, normalize_membership(best_ever_membership))
+    return VC(graph, normalize_membership(best_ever_membership)), modularity_vals_for_run
 
 class EA_Mutator():
     def __init__(self, graph, membership):
@@ -470,6 +486,7 @@ def ea_clustering(graph, n=50, max_iterations=5000, verbose=False):
     if n%2 != 0:
         raise Exception("Number of vertices in ea_clustering must be even, not {0}".format(n))
     halfway_index = int(n/2)
+    modularity_vals_for_run = []
 
     modularity_key = lambda m: m.mm.modularity
 
@@ -492,6 +509,8 @@ def ea_clustering(graph, n=50, max_iterations=5000, verbose=False):
         
         if i%100 == 0:
             print("ea_clustering: iteration {0}/{1}. Best modularity {2}".format(i,max_iterations, population[0].mm.modularity))
+            modularity_vals_for_run.append(population[0].mm.modularity,
+                                           sum(m.mm.modularity for m in population[:halfway_index]) / halfway_index)
 #        new_population = [m.copy().mutate() for m in population]
 #        population = population + new_population
 
@@ -499,7 +518,7 @@ def ea_clustering(graph, n=50, max_iterations=5000, verbose=False):
     best = population[0].mm.membership.copy()
     if verbose:
         print("Finished ea_clustering. Clustered into {0} communities.".format(len(set(best))))
-    return VC(graph, normalize_membership(best))
+    return VC(graph, normalize_membership(best)), modularity_vals_for_run
     
 valid_datasets = ['facebook','wikivote','collab', 'test', 'karate',]
 
