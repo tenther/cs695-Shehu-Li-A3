@@ -420,8 +420,6 @@ def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_
     if verbose:
         print("Finished mc_clustering. Clustered {0} communities into {1}.".format(len(best_ever_membership), len(set(best_ever_membership))))
     return VC(graph, normalize_membership(best_ever_membership))
-    #     print("Finished mc_clustering. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
-    # return VC(graph, normalize_membership(mm.membership))
 
 class EA_Mutator():
     def __init__(self, graph, membership):
@@ -441,52 +439,37 @@ class EA_Mutator():
         self.partition_counts   = other.partition_counts.copy()
         self.empty_partitions   = other.empty_partitions.copy()
 
-        # # Update things that are different in partition_vertexes. This
-        # # is much faster than copying, especially deep copying.
-        # for p, v in other.partition_vertexes.items():
-        #     if (p not in self.partition_vertexes or
-        #         self.partition_vertexes[p] != v):
-        #         self.partition_vertexes[p] = set(v)
+    def mutate(self, n_mutations = 1):
+        for _ in range(n_mutations):
+            selected_vertex    = int(random.random() * self.num_vertices)
+            selected_community = self.mm.membership[selected_vertex]
+            new_communities    = [c for c, n in self.partition_counts.items() if n and c != selected_community]
 
-        # # Make seperate list of kets to avoid dict mutation
-        # my_partitions = list(self.partition_vertexes.keys())
-        # for p in my_partitions:
-        #     if p not in other.partition_vertexes:
-        #         del(self.partition_vertexes[p])
+            # Pick random index 0 to num_vertices, or 0 to num_vertices - 1 if empty_partitions is empty
+            add_one            = len(self.empty_partitions) != 0
+            community_index    = int(random.random() * (len(new_communities)+int(add_one)))
 
+            if community_index == len(new_communities):
+                new_community = self.empty_partitions.pop()
+                self.partition_counts[new_community] = 0
+            else:
+                new_community = new_communities[community_index]
 
-    def mutate(self):
-        selected_vertex    = int(random.random() * self.num_vertices)
-        selected_community = self.mm.membership[selected_vertex]
-        new_communities    = [c for c, n in self.partition_counts.items() if n and c != selected_community]
+            self.mm.move_community(selected_vertex, new_community)
 
-        # Pick random index 0 to num_vertices, or 0 to num_vertices - 1 if empty_partitions is empty
-        add_one            = len(self.empty_partitions) != 0
-        community_index    = int(random.random() * (len(new_communities)+int(add_one)))
-        
-        if community_index == len(new_communities):
-            new_community = self.empty_partitions.pop()
-            self.partition_counts[new_community] = 0
-        else:
-            new_community = new_communities[community_index]
-            
-        self.mm.move_community(selected_vertex, new_community)
-
-        self.partition_counts[selected_community] -= 1
-        if not self.partition_counts[selected_community]:
-            del(self.partition_counts[selected_community])
-            self.empty_partitions.append(selected_community)
-        self.partition_counts[new_community] += 1
+            self.partition_counts[selected_community] -= 1
+            if not self.partition_counts[selected_community]:
+                del(self.partition_counts[selected_community])
+                self.empty_partitions.append(selected_community)
+            self.partition_counts[new_community] += 1
 
 def ea_clustering(graph, n=50, max_iterations=5000, verbose=False):
-#    pdb.set_trace()
     # setup initial population
     population = []
     num_vertices = len(graph.vs)
     if n%2 != 0:
         raise Exception("Number of vertices in ea_clustering must be even, not {0}".format(n))
     halfway_index = int(n/2)
-
 
     modularity_key = lambda m: m.mm.modularity
 
@@ -496,14 +479,16 @@ def ea_clustering(graph, n=50, max_iterations=5000, verbose=False):
 
     for i in range(max_iterations):
         population.sort(reverse=True, key=modularity_key)
+
         if population[0].mm.modularity == population[-1].mm.modularity:
             if verbose:
                 "ea_clustering: converged"
             break
-        # copying whole objects is slow, so use custom copy functions
+        # copying whole objects is slow, so use custom copy functions and copy better
+        # mutators over to existing ones that are poorer.
         for m_idx in range(halfway_index, n):
             population[m_idx].copy(population[m_idx - halfway_index])
-            population[m_idx].mutate()
+            population[m_idx].mutate(1)
         
         if i%100 == 0:
             print("ea_clustering: iteration {0}/{1}. Best modularity {2}".format(i,max_iterations, population[0].mm.modularity))
