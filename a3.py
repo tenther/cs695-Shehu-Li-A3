@@ -15,6 +15,7 @@ import os
 import pdb
 import random
 import re
+import subprocess
 import sys
 import time
 import json
@@ -615,6 +616,7 @@ def main(dataset=None,
                                   ['community_file', community_file_name],
                                   ['modularity', clusters[data][alg][0].modularity],
                                   ['elapsed_time', dataset_algorithm_time[data][alg]],
+                                  ['git_hash', str(subprocess.run(["git", "ls-files", "-s", sys.argv[0]], stdout=subprocess.PIPE).stdout.strip().split()[1])],
                         ]
                         if node_filename:
                             fields.extend([['gephi_node_filename', node_filename],
