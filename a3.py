@@ -229,12 +229,22 @@ def do_clustering(graph,
                   alpha=None,
                   max_children=None,
                   population_size=None,
+                  stats_rate=100
                   ):
     results = None
     with mp.Pool(max_children) as p:
-        results = p.starmap(func, [(graph, max_iterations, min_delta, verbose, max_no_progress, alpha, population_size) for _ in range(tries)])
+        results = p.starmap(func, [(graph, max_iterations, min_delta, verbose, max_no_progress, alpha, population_size, stats_rate) for _ in range(tries)])
+    
+    best_cluster = max(results, key=lambda r: r[0].modularity)[0]
+    
+    if func.__name__ == "ea_clustering":
+        print(results)
+        stats = results[0][1]
+    else:
+        data = [s for _,s in results]
+        stats = stats_from_modularity_data(data)
 
-    return max(results, key=lambda r: r[0].modularity)
+    return best_cluster, stats
 
 def stats_from_modularity_data(data):
     stats_prep = list(itertools.zip_longest(*data))
@@ -245,12 +255,17 @@ def stats_from_modularity_data(data):
     return stats
 
 def write_stats_to_file(stats, filename):
-    with open(filename + ".csv", 'w') as f:
+    with open(filename, 'w') as f:
         for line in stats:
             f.write("{0},{1},{2}\n".format(line[0], line[1], line[2]))
             
-#def read_stats_from_file(filename):
-#    with open(filename + ".csv", 'r') as f:
+def read_stats_from_file(filename):
+    stats = []
+    with open(filename, 'r') as f:
+        for line in f:
+            temp = line.split(",")
+            stats.append([int(temp[0]),float(temp[1]),float(temp[2])])
+    return stats
 
 # Make communities indexed from 0
 def normalize_membership(membership):
@@ -268,7 +283,7 @@ def generate_random_membership(n, max_communities=float('inf')):
         membership.append(int(random.random() * max_communities))
     return normalize_membership(membership)
 
-def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=500, alpha=0.0, population_size=None):
+def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=500, alpha=0.0, population_size=None, stats_rate=100):
     # start with each vertex in its own commuanity
     mm = ModularityMaintainer(graph, [i for i, _ in enumerate(graph.vs)])
     modularity_vals_for_run = []
@@ -317,14 +332,14 @@ def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, 
         else:
             no_progress_counter += 1
             mm.revert()
-        if iteration % 100 == 0:
+        if iteration % stats_rate == 0:
             modularity_vals_for_run.append(mm.modularity)
     
     if verbose:
         print("Finished greedy_clustering2. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
     return VC(graph, normalize_membership(mm.membership)), modularity_vals_for_run
 
-def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=500, alpha=1000.0, population_size=None):
+def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=500, alpha=1000.0, population_size=None, stats_rate=100):
     # start with each vertex in its own commuanity
     mm = ModularityMaintainer(graph, [i for i, _ in enumerate(graph.vs)])
     modularity_vals_for_run = []
@@ -367,7 +382,7 @@ def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_
         if delta > min_delta:
             accept_change = True
         else:
-            p = math.exp(delta / alpha * iteration / max_iterations) #Have to think of how e^x works to continue this
+            p = math.exp(delta / alpha * iteration / max_iterations)
 #            p = 1/(float(iteration)/1000.0 + 1.0)
             r = random.uniform(0.0, 1.0)
             if p > r:
@@ -395,7 +410,7 @@ def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_
         else:
             no_progress_counter += 1
             mm.revert()
-        if iteration % 100 == 0:
+        if iteration % stats_rate == 0:
             modularity_vals_for_run.append(mm.modularity)
     
     if verbose:
@@ -449,7 +464,7 @@ def do_ea_work(m_target, m_source):
     m_target.mutate(1)
     return m_target
 
-def ea_clustering(graph, max_iterations=5000, min_delta=None, verbose=False, max_no_progress=None, alpha=None, population_size=100):
+def ea_clustering(graph, max_iterations=5000, min_delta=None, verbose=False, max_no_progress=None, alpha=None, population_size=100, stats_rate=100):
     # setup initial population
     population = []
     num_vertices = len(graph.vs)
@@ -480,6 +495,7 @@ def ea_clustering(graph, max_iterations=5000, min_delta=None, verbose=False, max
         if i%100 == 0:
             if verbose:
                 print("ea_clustering: iteration {0}/{1}. Best modularity {2}".format(i,max_iterations, population[0].mm.modularity))
+        if i % stats_rate == 0:
             modularity_vals_for_run.append([i, population[0].mm.modularity,
                                             sum(m.mm.modularity for m in population[:population_size]) / population_size])
 
@@ -502,6 +518,7 @@ def main(dataset=None,
          export=False,
          display=False,
          write_report=False,
+         stats_rate=100,
          ):
     dataset_file_name = {
         'facebook': os.path.join(*"data/egonets-Facebook/facebook_combined.txt".split("/")),
@@ -538,9 +555,9 @@ def main(dataset=None,
     
     dataset_algorithm_params = defaultdict(lambda: defaultdict(dict))
     for data in valid_datasets:
-        dataset_algorithm_params[dataset]['greedy']     = dict(verbose=verbose, max_iterations=max_iters, tries=tries, max_no_progress=max_no_progress)
-        dataset_algorithm_params[dataset]['mc-cluster'] = dict(verbose=verbose, max_iterations=max_iters, tries=tries, max_no_progress=max_no_progress,alpha=alpha)
-        dataset_algorithm_params[dataset]['ea-cluster'] = dict(verbose=verbose, max_iterations=max_iters, population_size=tries)
+        dataset_algorithm_params[dataset]['greedy']     = dict(verbose=verbose, max_iterations=max_iters, tries=tries, max_no_progress=max_no_progress, stats_rate=stats_rate)
+        dataset_algorithm_params[dataset]['mc-cluster'] = dict(verbose=verbose, max_iterations=max_iters, tries=tries, max_no_progress=max_no_progress, alpha=alpha, stats_rate=stats_rate)
+        dataset_algorithm_params[dataset]['ea-cluster'] = dict(verbose=verbose, max_iterations=max_iters, population_size=tries, stats_rate=stats_rate)
         
     graphs = {}
     clusters = defaultdict(dict)
@@ -585,7 +602,7 @@ def main(dataset=None,
                 params = ""
                 if alg in ('greedy', 'mc-cluster', 'ea-cluster'):
                     params = '{0}_'.format(max_iters)
-                file_name_base = time.strftime("data/{0}_{1}_{2}%y-%m-%d_%H-%M-%S".format(data, alg, params))
+                file_name_base = time.strftime("reports/{0}_{1}_{2}%y-%m-%d_%H-%M-%S".format(data, alg, params))
                 community_file_name = "{0}_community.txt".format(file_name_base)
                 print("Writing {0}".format(community_file_name))
                 with open(community_file_name, 'w') as f:
@@ -622,6 +639,11 @@ def main(dataset=None,
                             fields.extend([['gephi_node_filename', node_filename],
                                            ['gephi_edge_filename', edge_filename]])
                         f.write(json.dumps({k:v for k,v in fields}, indent=2))
+                    
+                    if alg in ('greedy', 'mc-cluster', 'ea-cluster'):
+                        stats_report_file_name = "{0}_stats_report.csv".format(file_name_base)
+                        print("Writing {0}".format(stats_report_file_name))
+                        write_stats_to_file(stats, stats_report_file_name)
 
     return
 
@@ -674,6 +696,10 @@ if __name__ == '__main__':
                         action='store_true',
                         default=False,
                         help='Write statistics and filenames to report file.')
+    parser.add_argument('-sr',
+                        type=int,
+                        help='Rate at which to store modularity statistics',
+                            default=100)
 
     args = parser.parse_args()
 
@@ -691,4 +717,5 @@ if __name__ == '__main__':
              alpha=args.m,
              display=args.y,
              write_report=args.r,
+             stats_rate=args.sr
         )
