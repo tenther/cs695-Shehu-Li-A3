@@ -1,20 +1,21 @@
 #!/usr/bin/python3 -u
 from __future__ import division
 import argparse
+import cProfile
 from collections import defaultdict, namedtuple
+import copy
 import functools
 import glob
 import igraph as ig
+import itertools
+import math
+import multiprocessing as mp
 import os
 import pdb
 import random
 import re
+import sys
 import time
-import math
-import cProfile
-import copy
-import multiprocessing as mp
-import itertools
 
 VC = ig.VertexClustering
 
@@ -255,56 +256,7 @@ def generate_random_membership(n, max_communities=float('inf')):
         membership.append(int(random.random() * max_communities))
     return normalize_membership(membership)
 
-def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=0, alpha=0.0):
-    # start with each vertex in its own commuanity
-    mm = ModularityMaintainer(graph, [i for i, _ in enumerate(graph.vs)])
-
-    partition_vertexes = defaultdict(set)
-    for i, p in enumerate(mm.membership):
-        partition_vertexes[p].add(i)
-
-    partition_counts = dict()
-    for i, s in partition_vertexes.items():
-        partition_counts[i] = len(s)
-
-    previous_modularity = mm.modularity
-    for iteration in range(max_iterations):
-        selected_vertex    = random.randint(0, len(graph.vs) - 1)
-        selected_community = mm.membership[selected_vertex]
-        new_communities    = [c for c in partition_counts.keys() if c != selected_community]
-        random.shuffle(new_communities)
-        found_one          = False
-        found_community    = 0
-        best_modularity    = float("-inf")
-        best_community     = 0
-        for new_community in new_communities:
-            if new_community == selected_community:
-                continue
-            mm.move_community(selected_vertex, new_community)
-            delta = mm.modularity - previous_modularity
-            if delta > min_delta:
-                found_community = new_community
-                found_one = True
-                if mm.modularity > best_modularity:
-                    best_community = new_community
-                    best_modularity = mm.modularity
-            mm.revert()
-        if found_one:
-            partition_counts[selected_community] -= 1
-            # commented this out to see if leaving the total number of partitions the same as the original makes a difference
-            # if not partition_counts[selected_community]:
-            #     del(partition_counts[selected_community])
-            partition_counts[best_community] += 1
-            mm.move_community(selected_vertex, best_community)
-            if verbose:
-                print("Greedy clustering. iteration={0} modularity:={1} delta={2}.".format(iteration, mm.modularity, mm.modularity - previous_modularity))
-            previous_modularity = mm.modularity
-    
-    if verbose:
-        print("Finished greedy_clustering. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
-    return VC(graph, normalize_membership(mm.membership))
-
-def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=500, alpha=0.0):
+def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=500, alpha=0.0):
     # start with each vertex in its own commuanity
     mm = ModularityMaintainer(graph, [i for i, _ in enumerate(graph.vs)])
     modularity_vals_for_run = []
@@ -362,7 +314,6 @@ def greedy_clustering2(graph, max_iterations=5000, min_delta=0.0, verbose=False,
 
 def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=500, alpha=1000.0):
     # start with each vertex in its own commuanity
-    print("mc_clustering: alpha={0}".format(alpha))
     mm = ModularityMaintainer(graph, [i for i, _ in enumerate(graph.vs)])
     modularity_vals_for_run = []
 
@@ -486,7 +437,7 @@ def do_ea_work(m_target, m_source):
     m_target.mutate(1)
     return m_target
 
-def ea_clustering(graph, n=100, max_iterations=5000, verbose=False):
+def ea_clustering(graph, population_size=100, max_iterations=5000, verbose=False):
     # setup initial population
     population = []
     num_vertices = len(graph.vs)
@@ -495,28 +446,30 @@ def ea_clustering(graph, n=100, max_iterations=5000, verbose=False):
     modularity_key = lambda m: m.mm.modularity
 
     # Preallocate 2n individuals in population, so we can resuse objects.
-    print("ea_clustering: Allocating population of size 2*n={0}".format(2*n))
-    for i in range(2*n):
+    if verbose:
+        print("ea_clustering: Allocating population of size 2*population_size={0}".format(2*population_size))
+    for i in range(2*population_size):
         population.append(EA_Mutator(graph, generate_random_membership(num_vertices)))
 
     for i in range(max_iterations):
         population.sort(reverse=True, key=modularity_key)
 
-        if population[0].mm.modularity == population[n-1].mm.modularity:
+        if population[0].mm.modularity == population[population_size-1].mm.modularity:
             if verbose:
                 print("ea_clustering: converged")
             break
         # copying whole objects is slow, so use custom copy functions and copy better
         # mutators over to existing ones that are poorer.
 
-        for m_idx in range(n, 2*n):
-            population[m_idx].copy(population[m_idx - n])
+        for m_idx in range(population_size, 2*population_size):
+            population[m_idx].copy(population[m_idx - population_size])
             population[m_idx].mutate(1)
 
         if i%100 == 0:
-            print("ea_clustering: iteration {0}/{1}. Best modularity {2}".format(i,max_iterations, population[0].mm.modularity))
-            modularity_vals_for_run.append(population[0].mm.modularity,
-                                           sum(m.mm.modularity for m in population[:halfway_index]) / halfway_index)
+            if verbose:
+                print("ea_clustering: iteration {0}/{1}. Best modularity {2}".format(i,max_iterations, population[0].mm.modularity))
+            modularity_vals_for_run.append((population[0].mm.modularity,
+                                            sum(m.mm.modularity for m in population[:population_size]) / population_size))
 
     population.sort(reverse=True, key=modularity_key)
     best = population[0].mm.membership.copy()
@@ -529,13 +482,13 @@ valid_datasets = ['facebook','wikivote','collab', 'test', 'karate',]
 def main(dataset=None, 
          algorithm=None, 
          verbose=False, 
-         max_iters1=30000, 
-         max_iters2=10000000, 
+         max_iters=30000, 
          write_clusters=False, 
          tries=1,
          max_no_progress=500,
          alpha=1000,
          export=False,
+         display=False,
          ):
     dataset_file_name = {
         'facebook': os.path.join(*"data/egonets-Facebook/facebook_combined.txt".split("/")),
@@ -553,22 +506,29 @@ def main(dataset=None,
         'test':      False,
     }
 
+    dataset_igraph_layout = {
+        'facebook':  'lgl',
+        'wikivote':  'lgl',
+        'collab':    'lgl',
+        'karate':    'kk',
+        'test':      'kk',
+    }
+
+
     algorithm_func = {
-        'betweenness': lambda g, kw: g.community_edge_betweenness().as_clustering(),
-        'eigenvector': lambda g, kw: g.community_leading_eigenvector(),
-        'walktrap':    lambda g, kw: g.community_walktrap().as_clustering(),
-        'greedy-1':    lambda g, kw: do_greedy_clustering(g, greedy_clustering, **kw),
-        'greedy-2':    lambda g, kw: do_greedy_clustering(g, greedy_clustering2, **kw),
+        'betweenness': lambda g, kw: (g.community_edge_betweenness().as_clustering(), None),
+        'eigenvector': lambda g, kw: (g.community_leading_eigenvector(), None),
+        'walktrap':    lambda g, kw: (g.community_walktrap().as_clustering(), None),
+        'greedy':      lambda g, kw: do_greedy_clustering(g, greedy_clustering, **kw),
         'mc-cluster':  lambda g, kw: do_greedy_clustering(g, mc_clustering, **kw),
         'ea-cluster':  lambda g, kw: ea_clustering(g, **kw),
     }
     
     dataset_algorithm_params = defaultdict(lambda: defaultdict(dict))
     for data in valid_datasets:
-        dataset_algorithm_params[dataset]['greedy-1']   = dict(verbose=verbose, max_iterations=max_iters1, tries=tries, max_no_progress=max_no_progress)
-        dataset_algorithm_params[dataset]['greedy-2']   = dict(verbose=verbose, max_iterations=max_iters2, tries=tries, max_no_progress=max_no_progress)
-        dataset_algorithm_params[dataset]['mc-cluster'] = dict(verbose=verbose, max_iterations=max_iters2, tries=tries, max_no_progress=max_no_progress,alpha=alpha)
-        dataset_algorithm_params[dataset]['ea-cluster'] = dict(verbose=verbose, max_iterations=max_iters2, n=tries)
+        dataset_algorithm_params[dataset]['greedy']     = dict(verbose=verbose, max_iterations=max_iters, tries=tries, max_no_progress=max_no_progress)
+        dataset_algorithm_params[dataset]['mc-cluster'] = dict(verbose=verbose, max_iterations=max_iters, tries=tries, max_no_progress=max_no_progress,alpha=alpha)
+        dataset_algorithm_params[dataset]['ea-cluster'] = dict(verbose=verbose, max_iterations=max_iters, population_size=tries)
         
     graphs = {}
     clusters = defaultdict(dict)
@@ -601,16 +561,19 @@ def main(dataset=None,
             for alg, results in clusters[data].items():
                 cluster, stats = results
                 params = ""
-                if alg == 'greedy-1':
-                    params = '{0}_'.format(max_iters1)
-                if alg in ('greedy-2', 'mc-cluster', 'ea-cluster'):
-                    params = '{0}_'.format(max_iters2)
+                if alg in ('greedy', 'mc-cluster', 'ea-cluster'):
+                    params = '{0}_'.format(max_iters)
                 file_name = time.strftime("data/community_{0}_{1}_{2}%y-%m-%d_%H-%M-%S.txt".format(data, alg, params))
                 print("Writing {0}".format(file_name))
                 with open(file_name, 'w') as f:
                     for i, c in enumerate(cluster.membership):
                         f.write("{0}\t{1}\n".format(i,c))
     
+                if display:
+                    print("Displaying results for dataset {0}, algorithm {1}, with layout {2}".format(data, alg, dataset_igraph_layout[data]))
+                    executable = re.sub(r'[^/\\]+.py$', 'display_graph_communities.py', sys.argv[0])
+                    os.system("{0} -g {1} -m {2} -y {3}".format(executable, dataset_file_name[data], file_name, dataset_igraph_layout[data]))
+
     if export:
         node_filename = "gephi_exports/nodes_{0}_{1}".format(dataset, algorithm)
         edge_filename = "gephi_exports/edges_{0}_{1}".format(dataset, algorithm)
@@ -627,25 +590,21 @@ if __name__ == '__main__':
                         help='Dataset to process',
                         default=None)
     parser.add_argument('-a',
-                        choices=['eigenvector', 'walktrap', 'greedy-1', 'greedy-2', 'betweenness', 'mc-cluster', 'ea-cluster'],
+                        choices=['eigenvector', 'walktrap', 'greedy', 'betweenness', 'mc-cluster', 'ea-cluster'],
                         help='Algorithm to run on dataset',
                             default=None)
     parser.add_argument('-v',
                         action='store_true',
                         help='Verbose mode',
                         default=False)
-    parser.add_argument('-x1',
-                        type=int,
-                        help='max iterations to run on first greedy algorithm',
-                            default=30000)
     parser.add_argument('-t',
                         type=int,
-                        help='number of tries to run with greedy algorithm',
+                        help='Number of tries to run with greedy, and mc-cluster algorithms. Population size with ea-cluster algorithm',
                             default=1)
-    parser.add_argument('-x2',
+    parser.add_argument('-x',
                         type=int,
-                        help='max iterations to run on second greedy algorithm',
-                            default=10000000)
+                        help='max iterations to run',
+                            default=500)
     parser.add_argument('-m',
                         type=float,
                         help='alpha for mc_cluster algorithm',
@@ -661,6 +620,9 @@ if __name__ == '__main__':
     parser.add_argument('-e',
                         action='store_true',
                         help='export Gephi spreadsheet csv file')
+    parser.add_argument('-y',
+                        action='store_true',
+                        help='Display graph results visually in igraph.')
     parser.add_argument('-p',
                         type=str,
                         default='',
@@ -669,16 +631,16 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.p:
-        cProfile.run("""main(dataset=args.d,  algorithm=args.a,  verbose=args.v,  max_iters1=args.x1, max_iters2=args.x2, write_clusters=args.w, tries=args.t, max_no_progress=args.c, export=args.e, alpha=args.m)""", args.p)
+        cProfile.run("""main(dataset=args.d,  algorithm=args.a,  verbose=args.v,  max_iters=args.x, write_clusters=args.w, tries=args.t, max_no_progress=args.c, export=args.e, alpha=args.m)""", args.p)
     else:
         main(dataset=args.d, 
              algorithm=args.a, 
              verbose=args.v, 
-             max_iters1=args.x1,
-             max_iters2=args.x2,
+             max_iters=args.x,
              write_clusters=args.w,
              tries=args.t,
              max_no_progress=args.c,
              export=args.e,
              alpha=args.m,
+             display=args.y,
         )
