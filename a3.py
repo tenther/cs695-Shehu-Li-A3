@@ -4,6 +4,7 @@ import argparse
 import cProfile
 from collections import defaultdict, namedtuple
 import copy
+import datetime
 import functools
 import glob
 import igraph as ig
@@ -16,6 +17,7 @@ import random
 import re
 import sys
 import time
+import json
 
 VC = ig.VertexClustering
 
@@ -198,7 +200,7 @@ def export_gephi_csv(graph, membership, nodes_filename="nodes", edges_filename="
     g = graph
     atts = list(g.vs.attribute_names())
     atts.remove("name")
-    with open(nodes_filename + ".csv", 'w') as f:
+    with open(nodes_filename, 'w') as f:
         line = 'Id,Label,Community' + (atts and ',' or '') + ','.join(map(str, atts))
         f.write(line + "\n")
         for v in g.vs:
@@ -209,26 +211,27 @@ def export_gephi_csv(graph, membership, nodes_filename="nodes", edges_filename="
                 line += "," + ','.join(map(str,temp))
             f.write(line + "\n")
             
-    with open(edges_filename + ".csv", 'w') as f:
+    with open(edges_filename, 'w') as f:
         f.write("source,target,type\n")
         temp = [e.tuple for e in g.es]
         for s,t in temp:
             line = "{0},{1},{2}".format(str(s),str(t),"undirected")
             f.write(line + "\n")
 
-def do_greedy_clustering(graph, 
-                         func, 
-                         tries=100, 
-                         max_iterations=5000, 
-                         min_delta=0.0, 
-                         max_no_progress=500, 
-                         verbose=False,
-                         alpha=None,
-                         max_children=8,):
-
+def do_clustering(graph, 
+                  func, 
+                  tries=100, 
+                  max_iterations=5000, 
+                  min_delta=0.0, 
+                  max_no_progress=500, 
+                  verbose=False,
+                  alpha=None,
+                  max_children=None,
+                  population_size=None,
+                  ):
     results = None
-    with mp.Pool() as p:
-        results = p.starmap(func, [(graph, max_iterations, min_delta, verbose, max_no_progress, alpha) for _ in range(tries)])
+    with mp.Pool(max_children) as p:
+        results = p.starmap(func, [(graph, max_iterations, min_delta, verbose, max_no_progress, alpha, population_size) for _ in range(tries)])
 
     return max(results, key=lambda r: r[0].modularity)
 
@@ -256,7 +259,7 @@ def generate_random_membership(n, max_communities=float('inf')):
         membership.append(int(random.random() * max_communities))
     return normalize_membership(membership)
 
-def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=500, alpha=0.0):
+def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=500, alpha=0.0, population_size=None):
     # start with each vertex in its own commuanity
     mm = ModularityMaintainer(graph, [i for i, _ in enumerate(graph.vs)])
     modularity_vals_for_run = []
@@ -312,7 +315,7 @@ def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, 
         print("Finished greedy_clustering2. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
     return VC(graph, normalize_membership(mm.membership)), modularity_vals_for_run
 
-def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=500, alpha=1000.0):
+def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=500, alpha=1000.0, population_size=None):
     # start with each vertex in its own commuanity
     mm = ModularityMaintainer(graph, [i for i, _ in enumerate(graph.vs)])
     modularity_vals_for_run = []
@@ -355,7 +358,7 @@ def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_
         if delta > min_delta:
             accept_change = True
         else:
-            p = min(math.exp(delta / alpha * iteration),1) #Have to think of how e^x works to continue this
+            p = math.exp(delta / alpha * iteration / max_iterations) #Have to think of how e^x works to continue this
 #            p = 1/(float(iteration)/1000.0 + 1.0)
             r = random.uniform(0.0, 1.0)
             if p > r:
@@ -437,7 +440,7 @@ def do_ea_work(m_target, m_source):
     m_target.mutate(1)
     return m_target
 
-def ea_clustering(graph, population_size=100, max_iterations=5000, verbose=False):
+def ea_clustering(graph, max_iterations=5000, min_delta=None, verbose=False, max_no_progress=None, alpha=None, population_size=100):
     # setup initial population
     population = []
     num_vertices = len(graph.vs)
@@ -489,6 +492,7 @@ def main(dataset=None,
          alpha=1000,
          export=False,
          display=False,
+         write_report=False,
          ):
     dataset_file_name = {
         'facebook': os.path.join(*"data/egonets-Facebook/facebook_combined.txt".split("/")),
@@ -514,14 +518,13 @@ def main(dataset=None,
         'test':      'kk',
     }
 
-
     algorithm_func = {
         'betweenness': lambda g, kw: (g.community_edge_betweenness().as_clustering(), None),
         'eigenvector': lambda g, kw: (g.community_leading_eigenvector(), None),
         'walktrap':    lambda g, kw: (g.community_walktrap().as_clustering(), None),
-        'greedy':      lambda g, kw: do_greedy_clustering(g, greedy_clustering, **kw),
-        'mc-cluster':  lambda g, kw: do_greedy_clustering(g, mc_clustering, **kw),
-        'ea-cluster':  lambda g, kw: ea_clustering(g, **kw),
+        'greedy':      lambda g, kw: do_clustering(g, greedy_clustering, **kw),
+        'mc-cluster':  lambda g, kw: do_clustering(g, mc_clustering, **kw),
+        'ea-cluster':  lambda g, kw: do_clustering(g, ea_clustering, tries=1, max_children=1, **kw),
     }
     
     dataset_algorithm_params = defaultdict(lambda: defaultdict(dict))
@@ -556,30 +559,60 @@ def main(dataset=None,
             print("    time: {0}".format(dataset_algorithm_time[data][alg]))
         print("")
 
-    if write_clusters:
+    report_file_timestamp = '{:%Y-%m-%d_%H-%M-%S}'.format(datetime.datetime.now())
+
+    node_filename = None
+    edge_filename = None
+    if export:
+        node_filename = "gephi_exports/nodes_{0}_{1}_{2}.csv".format(dataset, algorithm, report_file_timestamp)
+        edge_filename = "gephi_exports/edges_{0}_{1}_{2}.csv".format(dataset, algorithm, report_file_timestamp)
+        export_gephi_csv(clusters[data][alg][0].graph,clusters[data][alg][0].membership,node_filename,edge_filename)
+        print("Exporting Gephi spreadsheet csv files: {0}.csv, {1}.csv".format(node_filename,edge_filename))
+
+    if write_clusters or write_report or display:
         for data in clusters.keys():
             for alg, results in clusters[data].items():
                 cluster, stats = results
                 params = ""
                 if alg in ('greedy', 'mc-cluster', 'ea-cluster'):
                     params = '{0}_'.format(max_iters)
-                file_name = time.strftime("data/community_{0}_{1}_{2}%y-%m-%d_%H-%M-%S.txt".format(data, alg, params))
-                print("Writing {0}".format(file_name))
-                with open(file_name, 'w') as f:
+                file_name_base = time.strftime("data/{0}_{1}_{2}%y-%m-%d_%H-%M-%S".format(data, alg, params))
+                community_file_name = "{0}_community.txt".format(file_name_base)
+                print("Writing {0}".format(community_file_name))
+                with open(community_file_name, 'w') as f:
                     for i, c in enumerate(cluster.membership):
                         f.write("{0}\t{1}\n".format(i,c))
     
                 if display:
                     print("Displaying results for dataset {0}, algorithm {1}, with layout {2}".format(data, alg, dataset_igraph_layout[data]))
                     executable = re.sub(r'[^/\\]+.py$', 'display_graph_communities.py', sys.argv[0])
-                    os.system("{0} -g {1} -m {2} -y {3}".format(executable, dataset_file_name[data], file_name, dataset_igraph_layout[data]))
+                    os.system("{0} -g {1} -m {2} -y {3}".format(executable, dataset_file_name[data], community_file_name, dataset_igraph_layout[data]))
 
-    if export:
-        node_filename = "gephi_exports/nodes_{0}_{1}".format(dataset, algorithm)
-        edge_filename = "gephi_exports/edges_{0}_{1}".format(dataset, algorithm)
-        export_gephi_csv(clusters[data][alg].graph,clusters[data][alg].membership,node_filename,edge_filename)
-        print("Exporting Gephi spreadsheet csv files: {0}.csv, {1}.csv".format(node_filename,edge_filename))
-    
+                if write_report:
+                    report_file_name = "{0}_report.json".format(file_name_base)
+                    print("Writing {0}".format(report_file_name))
+                    with open(report_file_name, 'w') as f:
+                        fields = [['dataset', data],
+                                  ['graph_data', dataset_file_name[data]],
+                                  ['algorithm', algorithm],
+                                  ['verbose', verbose],
+                                  ['max_iters', max_iters],
+                                  ['write_clusters', write_clusters],
+                                  ['tries', tries],
+                                  ['max_no_progress', max_no_progress],
+                                  ['alpha', alpha],
+                                  ['export', export],
+                                  ['display', display],
+                                  ['write_report', write_report],
+                                  ['community_file', community_file_name],
+                                  ['modularity', clusters[data][alg][0].modularity],
+                                  ['elapsed_time', dataset_algorithm_time[data][alg]],
+                        ]
+                        if node_filename:
+                            fields.extend([['gephi_node_filename', node_filename],
+                                           ['gephi_edge_filename', edge_filename]])
+                        f.write(json.dumps({k:v for k,v in fields}, indent=2))
+
     return
 
 if __name__ == '__main__':
@@ -627,6 +660,10 @@ if __name__ == '__main__':
                         type=str,
                         default='',
                         help='Run cProfile on main() function and store results in file provided.')
+    parser.add_argument('-r',
+                        action='store_true',
+                        default=False,
+                        help='Write statistics and filenames to report file.')
 
     args = parser.parse_args()
 
@@ -643,4 +680,5 @@ if __name__ == '__main__':
              export=args.e,
              alpha=args.m,
              display=args.y,
+             write_report=args.r,
         )
