@@ -238,10 +238,18 @@ def do_clustering(graph,
 def stats_from_modularity_data(data):
     stats_prep = list(itertools.zip_longest(*data))
     stats = []
-    for line in stats_prep:
-        clean_line = [x for x in line if x is not None]
-        stats.append([max(clean_line), sum(clean_line) / len(clean_line)])
+    for i in range(len(stats_prep)):
+        clean_line = [x for x in stats_prep[i] if x is not None]
+        stats.append([i*100, max(clean_line), sum(clean_line) / len(clean_line)])
     return stats
+
+def write_stats_to_file(stats, filename):
+    with open(filename + ".csv", 'w') as f:
+        for line in stats:
+            f.write("{0},{1},{2}\n".format(line[0], line[1], line[2]))
+            
+#def read_stats_from_file(filename):
+#    with open(filename + ".csv", 'r') as f:
 
 # Make communities indexed from 0
 def normalize_membership(membership):
@@ -255,7 +263,7 @@ def generate_random_membership(n, max_communities=float('inf')):
     membership = []
     if max_communities > n:
         max_communities = n
-    for i in range(n):
+    for _ in range(n):
         membership.append(int(random.random() * max_communities))
     return normalize_membership(membership)
 
@@ -471,8 +479,8 @@ def ea_clustering(graph, max_iterations=5000, min_delta=None, verbose=False, max
         if i%100 == 0:
             if verbose:
                 print("ea_clustering: iteration {0}/{1}. Best modularity {2}".format(i,max_iterations, population[0].mm.modularity))
-            modularity_vals_for_run.append((population[0].mm.modularity,
-                                            sum(m.mm.modularity for m in population[:population_size]) / population_size))
+            modularity_vals_for_run.append([i, population[0].mm.modularity,
+                                            sum(m.mm.modularity for m in population[:population_size]) / population_size])
 
     population.sort(reverse=True, key=modularity_key)
     best = population[0].mm.membership.copy()
