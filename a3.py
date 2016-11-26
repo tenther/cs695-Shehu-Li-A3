@@ -11,6 +11,7 @@ import igraph as ig
 import itertools
 import math
 import multiprocessing as mp
+import numpy as np
 import os
 import pdb
 import random
@@ -48,9 +49,9 @@ class ModularityMaintainer(object):
     def __init__(self, graph, membership):
         # Code based on function igraph_modularity() in https://github.com/igraph/igraph/blob/master/src/community.c
         no_of_comms = max(membership) + 1
-        a           = [0.0 for _ in range(no_of_comms)]
-        e           = [0.0 for _ in range(no_of_comms)]
-        m           = [0.0 for _ in range(no_of_comms)]
+        a           = np.zeros(no_of_comms)
+        e           = np.zeros(no_of_comms)
+        m           = np.zeros(no_of_comms)
         modularity  = 0.0
         edges       = [(edge.source, edge.target) for edge in graph.es]
 
@@ -68,7 +69,7 @@ class ModularityMaintainer(object):
                 tmp = a[i]/2.0/no_of_edges
                 m[i] = e[i]/2.0/no_of_edges - tmp*tmp
 
-        modularity = sum(m)
+        modularity = m.sum()
         # make an adjacency list
         adj = defaultdict(set)
         for v1, v2 in edges:
@@ -160,7 +161,7 @@ class ModularityMaintainer(object):
         membership[v] = new_community
 
         # Recalculate modularity
-        self.modularity = sum(m)
+        self.modularity = m.sum()
 
     def revert(self):
         if not self.previous:
@@ -173,8 +174,9 @@ class ModularityMaintainer(object):
         self.a[prev_c2] = prev_a2
         self.e[prev_c2] = prev_e2
         self.m[prev_c2] = prev_m2
-        self.modularity = sum(self.m)
+        self.modularity = self.m.sum()
         self.previous = None
+
 
 def load_tsv_edges(data_file_name, directed=None):
 
@@ -232,8 +234,12 @@ def do_clustering(graph,
                   stats_rate=100
                   ):
     results = None
-    with mp.Pool(max_children) as p:
-        results = p.starmap(func, [(graph, max_iterations, min_delta, verbose, max_no_progress, alpha, population_size, stats_rate) for _ in range(tries)])
+    if tries > 1:
+        with mp.Pool(max_children) as p:
+            results = p.starmap(func, [(graph, max_iterations, min_delta, verbose, max_no_progress, alpha, population_size, stats_rate) for _ in range(tries)])
+    else:
+        # When tries == 1 just run in this process to allow gathering of cProfile stats.
+        results = [func(graph, max_iterations, min_delta, verbose, max_no_progress, alpha, population_size, stats_rate)]
     
     best_cluster = max(results, key=lambda r: r[0].modularity)[0]
     
@@ -358,24 +364,39 @@ def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_
     num_vertices = len(graph.vs)
     best_ever_modularity = float('-inf')
     best_ever_membership = []
-    empty_partitions = []
+    empty_partitions = set([])
+    non_empty_communities = []
     
     for iteration in range(max_iterations):
         if no_progress_counter == max_no_progress:
             break
         selected_vertex    = int(random.random() * num_vertices)
         selected_community = mm.membership[selected_vertex]
-        new_communities    = [c for c in partition_counts.keys() if c != selected_community]
+        
+        # Only recalculate new communities to pick from periodically
+        if iteration%1000 == 0:
+            non_empty_communities = list(partition_counts.keys())
         # Pick random index 0 to num_vertices, or 0 to num_vertices - 1 if empty_partitions is empty
         add_one            = len(empty_partitions) != 0
-        community_index    = int(random.random() * (len(new_communities)+int(add_one)))
-        
-        if community_index == len(new_communities):
-            new_community = empty_partitions.pop()
-            partition_counts[new_community] = 0
-        else:
-            new_community = new_communities[community_index]
+
+        # Since we're leaving empty communities in non_empty_communities temporarily, we have to do
+        # a little more work to make sure we get a valid pick.
+        while True:
+            community_index = int(random.random() * (len(non_empty_communities)+int(add_one)))
+
+            if community_index == len(non_empty_communities):
+                new_community = empty_partitions.pop()
+                partition_counts[new_community] = 0
+                break
+
+            new_community = non_empty_communities[community_index]
             
+            if new_community == selected_community:
+                continue
+
+            if new_community in partition_counts:
+                break
+                
         mm.move_community(selected_vertex, new_community)
         delta = mm.modularity - previous_modularity
         p = r = 0.0  # Declaring p and r outside if statement for reporting
@@ -402,7 +423,7 @@ def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_
             partition_counts[selected_community] -= 1
             if not partition_counts[selected_community]:
                 del(partition_counts[selected_community])
-                empty_partitions.append(selected_community)
+                empty_partitions.add(selected_community)
             partition_counts[new_community] += 1
             if verbose:
                 print("mc_clustering. iteration={0} modularity={1} delta={2} p={3} r={4} went_back={5}".format(iteration, mm.modularity, delta, p, r, delta < 0.0))
@@ -719,7 +740,7 @@ if __name__ == '__main__':
         args.c = int(args.x * 0.01)
 
     if args.p:
-        cProfile.run("""main(dataset=args.d,  algorithm=args.a,  verbose=args.v,  max_iters=args.x, write_clusters=args.w, tries=args.t, max_no_progress=args.c, export=args.e, alpha=args.m)""", args.p)
+        cProfile.run("""main(dataset=args.d,  algorithm=args.a,  verbose=args.v,  max_iters=args.x, write_clusters=args.w, tries=args.t, max_no_progress=args.c, export=args.e, alpha=args.m,display=args.y,write_report=args.r,stats_rate=args.sr)""", args.p)
     else:
         main(dataset=args.d, 
              algorithm=args.a, 

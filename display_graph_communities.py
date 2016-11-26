@@ -1,8 +1,17 @@
 #!/usr/bin/python3
-import igraph as ig
-import argparse
 import a3
+import argparse
+import igraph as ig
+import json
 import pdb
+
+dataset_igraph_layout = {
+    'facebook':  'lgl',
+    'wikivote':  'lgl',
+    'collab':    'lgl',
+    'karate':    'kk',
+    'test':      'kk',
+}
 
 def load_membership(graph, membership_file_name):
     membership = [None for _ in graph.vs]
@@ -42,10 +51,10 @@ if __name__=='__main__':
     parser.add_argument('-m',
                         type=str,
                         help='file containing membership information')
-    parser.add_argument('-d',
-                        action='store_true',
-                        help='Directed',
-                        default=False)
+    parser.add_argument('-r',
+                        type=str,
+                        default='',
+                        help='file report information')
     parser.add_argument('-l',
                         action='store_true',
                         help='Display labels on graph',
@@ -55,4 +64,9 @@ if __name__=='__main__':
                         help='Layout to use',
                             default='kk')
     args = parser.parse_args()
-    main(args.g, args.m, args.d, args.l, args.y)
+    if args.r:
+        with open(args.r) as report_file:
+            report = json.loads(report_file.read())
+            main(report["graph_data"], report["community_file"], False, args.l, dataset_igraph_layout[report["dataset"]])
+    else:
+        main(args.g, args.m, False, args.l, args.y)
