@@ -259,7 +259,7 @@ def stats_from_modularity_data(data, stats_rate):
     stats_prep = list(zip(*data))
     stats = []
     for i in range(len(stats_prep)):
-        stats.append([i*stats_rate, max(line), sum(line) / max_length])
+        stats.append([i*stats_rate, max(stats_prep[i]), sum(stats_prep[i]) / len(stats_prep[i])])
     return stats
 
 def write_stats_to_file(stats, filename):
