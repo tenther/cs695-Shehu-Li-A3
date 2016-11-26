@@ -252,11 +252,14 @@ def do_clustering(graph,
     return best_cluster, stats
 
 def stats_from_modularity_data(data, stats_rate):
-    stats_prep = list(itertools.zip_longest(*data))
+    max_length = max([len(l) for l in data])
+    for line in data:
+        max_val = line[-1]
+        line += [max_val] * (max_length - len(line))
+    stats_prep = list(zip(*data))
     stats = []
     for i in range(len(stats_prep)):
-        clean_line = [x for x in stats_prep[i] if x is not None]
-        stats.append([i*stats_rate, max(clean_line), sum(clean_line) / len(clean_line)])
+        stats.append([i*stats_rate, max(line), sum(line) / max_length])
     return stats
 
 def write_stats_to_file(stats, filename):
@@ -332,9 +335,15 @@ def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, 
         #         if new_community in partition_counts:
         #             break
         # else:
-        new_community = mm.membership[int(random.random() * float(num_vertices))]
-        if new_community == selected_community:
-            continue
+        p_new_com = 1/(len(partition_counts)+1)
+        r = random.uniform(0.0, 1.0)
+        if p_new_com > r:
+            new_community = empty_partitions.pop()
+            partition_counts[new_community] = 0
+        else:
+            new_community = mm.membership[int(random.random() * float(num_vertices))]
+            if new_community == selected_community:
+                continue
 
         mm.move_community(selected_vertex, new_community)
         delta = mm.modularity - previous_modularity
