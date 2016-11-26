@@ -294,35 +294,44 @@ def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, 
     mm = ModularityMaintainer(graph, [i for i, _ in enumerate(graph.vs)])
     modularity_vals_for_run = []
 
-    partition_vertexes = defaultdict(set)
-    for i, p in enumerate(mm.membership):
-        partition_vertexes[p].add(i)
-
-    partition_counts = dict()
-    for i, s in partition_vertexes.items():
-        partition_counts[i] = len(s)
+    partition_counts = defaultdict(int)
+    for _, p in enumerate(mm.membership):
+        partition_counts[p] = partition_counts[p] + 1
 
     previous_modularity = mm.modularity
     no_progress_counter = 0
     num_vertices = len(graph.vs)
-    empty_partitions = []
+    empty_partitions = set([])
+    non_empty_communities = []
     
     for iteration in range(max_iterations):
         if no_progress_counter == max_no_progress:
             break
         selected_vertex    = int(random.random() * num_vertices)
         selected_community = mm.membership[selected_vertex]
-        new_communities    = [c for c in partition_counts.keys() if c != selected_community]
+
+        if iteration%1000 == 0:
+            non_empty_communities = list(partition_counts.keys())
+
         # Pick random index 0 to num_vertices, or 0 to num_vertices - 1 if empty_partitions is empty
         add_one            = len(empty_partitions) != 0
-        community_index    = int(random.random() * (len(new_communities)+int(add_one)))
+
+        while True:
+            community_index = int(random.random() * (len(non_empty_communities)+int(add_one)))
         
-        if community_index == len(new_communities):
-            new_community = empty_partitions.pop()
-            partition_counts[new_community] = 0
-        else:
-            new_community = new_communities[community_index]
+            if community_index == len(non_empty_communities):
+                new_community = empty_partitions.pop()
+                partition_counts[new_community] = 0
+                break
+
+            new_community = non_empty_communities[community_index]
             
+            if new_community == selected_community:
+                continue
+
+            if new_community in partition_counts:
+                break
+
         mm.move_community(selected_vertex, new_community)
         delta = mm.modularity - previous_modularity
         if delta > min_delta:
@@ -330,10 +339,10 @@ def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, 
             partition_counts[selected_community] -= 1
             if not partition_counts[selected_community]:
                 del(partition_counts[selected_community])
-                empty_partitions.append(selected_community)
+                empty_partitions.add(selected_community)
             partition_counts[new_community] += 1
             if verbose:
-                print("Greedy clustering 2. iteration={0} modularity:={1} delta={2}.".format(iteration, mm.modularity, mm.modularity - previous_modularity))
+                print("Greedy clustering. iteration={0} modularity:={1} delta={2}.".format(iteration, mm.modularity, mm.modularity - previous_modularity))
             previous_modularity = mm.modularity
         else:
             no_progress_counter += 1
