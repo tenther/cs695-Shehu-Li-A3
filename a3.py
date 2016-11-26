@@ -312,32 +312,9 @@ def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, 
         selected_vertex    = int(random.random() * num_vertices)
         selected_community = mm.membership[selected_vertex]
 
-        # if False:
-        #     if iteration%1000 == 0:
-        #         non_empty_communities = list(partition_counts.keys())
-
-        #     # Pick random index 0 to num_vertices, or 0 to num_vertices - 1 if empty_partitions is empty
-        #     add_one            = len(empty_partitions) != 0
-
-        #     while True:
-        #         community_index = int(random.random() * (len(non_empty_communities)+int(add_one)))
-
-        #         if community_index == len(non_empty_communities):
-        #             new_community = empty_partitions.pop()
-        #             partition_counts[new_community] = 0
-        #             break
-
-        #         new_community = non_empty_communities[community_index]
-
-        #         if new_community == selected_community:
-        #             continue
-
-        #         if new_community in partition_counts:
-        #             break
-        # else:
         p_new_com = 1/(len(partition_counts)+1)
         r = random.uniform(0.0, 1.0)
-        if p_new_com > r:
+        if p_new_com > r and empty_partitions:
             new_community = empty_partitions.pop()
             partition_counts[new_community] = 0
         else:
@@ -391,32 +368,15 @@ def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_
         selected_vertex    = int(random.random() * num_vertices)
         selected_community = mm.membership[selected_vertex]
         
-        # # Only recalculate new communities to pick from periodically
-        # if iteration%1000 == 0:
-        #     non_empty_communities = list(partition_counts.keys())
-        # # Pick random index 0 to num_vertices, or 0 to num_vertices - 1 if empty_partitions is empty
-        # add_one            = len(empty_partitions) != 0
-
-        # # Since we're leaving empty communities in non_empty_communities temporarily, we have to do
-        # # a little more work to make sure we get a valid pick.
-        # while True:
-        #     community_index = int(random.random() * (len(non_empty_communities)+int(add_one)))
-
-        #     if community_index == len(non_empty_communities):
-        #         new_community = empty_partitions.pop()
-        #         partition_counts[new_community] = 0
-        #         break
-
-        #     new_community = non_empty_communities[community_index]
-            
-        #     if new_community == selected_community:
-        #         continue
-
-        #     if new_community in partition_counts:
-        #         break
-        new_community = mm.membership[int(random.random() * float(num_vertices))]
-        if new_community == selected_community:
-            continue
+        p_new_com = 1/(len(partition_counts)+1)
+        r = random.uniform(0.0, 1.0)
+        if p_new_com > r and empty_partitions:
+            new_community = empty_partitions.pop()
+            partition_counts[new_community] = 0
+        else:
+            new_community = mm.membership[int(random.random() * float(num_vertices))]
+            if new_community == selected_community:
+                continue
                 
         mm.move_community(selected_vertex, new_community)
         delta = mm.modularity - previous_modularity
@@ -481,17 +441,15 @@ class EA_Mutator():
         for _ in range(n_mutations):
             selected_vertex    = int(random.random() * self.num_vertices)
             selected_community = self.mm.membership[selected_vertex]
-            # new_communities    = [c for c, n in self.partition_counts.items() if n and c != selected_community]
 
-            # # Pick random index 0 to num_vertices, or 0 to num_vertices - 1 if empty_partitions is empty
-            add_one            = len(self.empty_partitions) != 0
             while True:
-                community_index    = int(random.random() * (len(self.mm.membership)+int(add_one)))
-
-                if community_index == len(self.mm.membership):
+                p_new_com = 1/(len(self.partition_counts)+1)
+                r = random.uniform(0.0, 1.0)
+                if p_new_com > r and self.empty_partitions:
                     new_community = self.empty_partitions.pop()
                     self.partition_counts[new_community] = 0
                 else:
+                    community_index    = int(random.random() * (len(self.mm.membership)))
                     new_community = self.mm.membership[community_index]
 
                 if new_community == selected_community:
