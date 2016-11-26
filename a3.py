@@ -15,7 +15,7 @@ import os
 import pdb
 import random
 import re
-import subprocess
+#import subprocess
 import sys
 import time
 import json
@@ -639,8 +639,9 @@ def main(dataset=None,
                                      ['community_file', community_file_name],
                                      ['modularity', clusters[data][alg][0].modularity],
                                      ['elapsed_time', dataset_algorithm_time[data][alg]],
-                                     ['git_hash', str(subprocess.run(["git", "ls-files", "-s", sys.argv[0]], stdout=subprocess.PIPE).stdout.strip().split()[1])],
+#                                     ['git_hash', str(subprocess.run(["git", "ls-files", "-s", sys.argv[0]], stdout=subprocess.PIPE).stdout.strip().split()[1])],
                                      ['stats_rate', stats_rate],
+                                     ['cluster_summary', cluster.summary()],
                     ]
 
                     if node_filename:
@@ -654,7 +655,7 @@ def main(dataset=None,
                         report_fields.append(['stats_file', stats_report_file_name])
 
                     with open(report_file_name, 'w') as f:
-                        f.write(json.dumps({k:v for k,v in report_fields}, indent=2))
+                        f.write(json.dumps({k:v for k,v in report_fields}, indent=2, sort_keys=True))
                     
     return
 
@@ -688,7 +689,7 @@ if __name__ == '__main__':
     parser.add_argument('-c',
                         type=int,
                         help='max iterations with no change before assuming converged',
-                            default=500)
+                            default=0)
     parser.add_argument('-w',
                         action='store_true',
                         help='write created clusters to disk',
@@ -713,6 +714,9 @@ if __name__ == '__main__':
                             default=100)
 
     args = parser.parse_args()
+
+    if args.c == 0:
+        args.c = int(args.x * 0.01)
 
     if args.p:
         cProfile.run("""main(dataset=args.d,  algorithm=args.a,  verbose=args.v,  max_iters=args.x, write_clusters=args.w, tries=args.t, max_no_progress=args.c, export=args.e, alpha=args.m)""", args.p)
