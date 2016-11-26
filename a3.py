@@ -242,16 +242,16 @@ def do_clustering(graph,
         stats = results[0][1]
     else:
         data = [s for _,s in results]
-        stats = stats_from_modularity_data(data)
+        stats = stats_from_modularity_data(data, stats_rate)
 
     return best_cluster, stats
 
-def stats_from_modularity_data(data):
+def stats_from_modularity_data(data, stats_rate):
     stats_prep = list(itertools.zip_longest(*data))
     stats = []
     for i in range(len(stats_prep)):
         clean_line = [x for x in stats_prep[i] if x is not None]
-        stats.append([i*100, max(clean_line), sum(clean_line) / len(clean_line)])
+        stats.append([i*stats_rate, max(clean_line), sum(clean_line) / len(clean_line)])
     return stats
 
 def write_stats_to_file(stats, filename):
