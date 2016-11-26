@@ -16,7 +16,6 @@ import os
 import pdb
 import random
 import re
-#import subprocess
 import sys
 import time
 import json
@@ -310,27 +309,32 @@ def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, 
         selected_vertex    = int(random.random() * num_vertices)
         selected_community = mm.membership[selected_vertex]
 
-        if iteration%1000 == 0:
-            non_empty_communities = list(partition_counts.keys())
+        # if False:
+        #     if iteration%1000 == 0:
+        #         non_empty_communities = list(partition_counts.keys())
 
-        # Pick random index 0 to num_vertices, or 0 to num_vertices - 1 if empty_partitions is empty
-        add_one            = len(empty_partitions) != 0
+        #     # Pick random index 0 to num_vertices, or 0 to num_vertices - 1 if empty_partitions is empty
+        #     add_one            = len(empty_partitions) != 0
 
-        while True:
-            community_index = int(random.random() * (len(non_empty_communities)+int(add_one)))
-        
-            if community_index == len(non_empty_communities):
-                new_community = empty_partitions.pop()
-                partition_counts[new_community] = 0
-                break
+        #     while True:
+        #         community_index = int(random.random() * (len(non_empty_communities)+int(add_one)))
 
-            new_community = non_empty_communities[community_index]
-            
-            if new_community == selected_community:
-                continue
+        #         if community_index == len(non_empty_communities):
+        #             new_community = empty_partitions.pop()
+        #             partition_counts[new_community] = 0
+        #             break
 
-            if new_community in partition_counts:
-                break
+        #         new_community = non_empty_communities[community_index]
+
+        #         if new_community == selected_community:
+        #             continue
+
+        #         if new_community in partition_counts:
+        #             break
+        # else:
+        new_community = mm.membership[int(random.random() * float(num_vertices))]
+        if new_community == selected_community:
+            continue
 
         mm.move_community(selected_vertex, new_community)
         delta = mm.modularity - previous_modularity
@@ -351,7 +355,7 @@ def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, 
             modularity_vals_for_run.append(mm.modularity)
     
     if verbose:
-        print("Finished greedy_clustering2. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
+        print("Finished greedy_clustering. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
     return VC(graph, normalize_membership(mm.membership)), modularity_vals_for_run
 
 def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=500, alpha=1000.0, population_size=None, stats_rate=100):
@@ -669,7 +673,6 @@ def main(dataset=None,
                                      ['community_file', community_file_name],
                                      ['modularity', clusters[data][alg][0].modularity],
                                      ['elapsed_time', dataset_algorithm_time[data][alg]],
-#                                     ['git_hash', str(subprocess.run(["git", "ls-files", "-s", sys.argv[0]], stdout=subprocess.PIPE).stdout.strip().split()[1])],
                                      ['stats_rate', stats_rate],
                                      ['cluster_summary', cluster.summary()],
                     ]
