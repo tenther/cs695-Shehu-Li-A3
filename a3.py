@@ -520,6 +520,11 @@ def main(dataset=None,
          write_report=False,
          stats_rate=100,
          ):
+
+    for d in ['reports', 'gephi_exports']:
+        if not os.path.isdir(d):
+            os.makedirs(d)
+
     dataset_file_name = {
         'facebook': os.path.join(*"data/egonets-Facebook/facebook_combined.txt".split("/")),
         'wikivote': os.path.join(*"data/wiki-Vote/wiki-Vote.txt".split("/")),
@@ -615,36 +620,42 @@ def main(dataset=None,
                     os.system("{0} -g {1} -m {2} -y {3}".format(executable, dataset_file_name[data], community_file_name, dataset_igraph_layout[data]))
 
                 if write_report:
+
                     report_file_name = "{0}_report.json".format(file_name_base)
                     print("Writing {0}".format(report_file_name))
-                    with open(report_file_name, 'w') as f:
-                        fields = [['dataset', data],
-                                  ['graph_data', dataset_file_name[data]],
-                                  ['algorithm', algorithm],
-                                  ['verbose', verbose],
-                                  ['max_iters', max_iters],
-                                  ['write_clusters', write_clusters],
-                                  ['tries', tries],
-                                  ['max_no_progress', max_no_progress],
-                                  ['alpha', alpha],
-                                  ['export', export],
-                                  ['display', display],
-                                  ['write_report', write_report],
-                                  ['community_file', community_file_name],
-                                  ['modularity', clusters[data][alg][0].modularity],
-                                  ['elapsed_time', dataset_algorithm_time[data][alg]],
-                                  ['git_hash', str(subprocess.run(["git", "ls-files", "-s", sys.argv[0]], stdout=subprocess.PIPE).stdout.strip().split()[1])],
-                        ]
-                        if node_filename:
-                            fields.extend([['gephi_node_filename', node_filename],
-                                           ['gephi_edge_filename', edge_filename]])
-                        f.write(json.dumps({k:v for k,v in fields}, indent=2))
-                    
+
+                    report_fields = [['dataset', data],
+                                     ['graph_data', dataset_file_name[data]],
+                                     ['algorithm', algorithm],
+                                     ['verbose', verbose],
+                                     ['max_iters', max_iters],
+                                     ['write_clusters', write_clusters],
+                                     ['tries', tries],
+                                     ['max_no_progress', max_no_progress],
+                                     ['alpha', alpha],
+                                     ['export', export],
+                                     ['display', display],
+                                     ['write_report', write_report],
+                                     ['community_file', community_file_name],
+                                     ['modularity', clusters[data][alg][0].modularity],
+                                     ['elapsed_time', dataset_algorithm_time[data][alg]],
+                                     ['git_hash', str(subprocess.run(["git", "ls-files", "-s", sys.argv[0]], stdout=subprocess.PIPE).stdout.strip().split()[1])],
+                                     ['stats_rate', stats_rate],
+                    ]
+
+                    if node_filename:
+                        report_fields.extend([['gephi_node_filename', node_filename],
+                                              ['gephi_edge_filename', edge_filename]])
+                        
                     if alg in ('greedy', 'mc-cluster', 'ea-cluster'):
                         stats_report_file_name = "{0}_stats_report.csv".format(file_name_base)
                         print("Writing {0}".format(stats_report_file_name))
                         write_stats_to_file(stats, stats_report_file_name)
+                        report_fields.append(['stats_file', stats_report_file_name])
 
+                    with open(report_file_name, 'w') as f:
+                        f.write(json.dumps({k:v for k,v in report_fields}, indent=2))
+                    
     return
 
 if __name__ == '__main__':
