@@ -743,25 +743,59 @@ if __name__ == '__main__':
                         type=int,
                         help='Rate at which to store modularity statistics',
                             default=100)
+    parser.add_argument('-z',
+                        type=str,
+                        default='',
+                        help='Run a test whose parameters are given in the specified json file (with same field format as an output report.')
 
     args = parser.parse_args()
 
-    if args.c == 0:
-        args.c = int(args.x * 0.01)
+    if args.z:
+        with open(args.z) as report_file:
+            report = json.loads(report_file.read())
+            args.d = report["dataset"]
+            args.a = report["algorithm"]
+            args.v = report["verbose"]
+            args.t = report["tries"]
+            args.x = report["max_iters"]
+            args.m = report["alpha"]
+            args.c = report["max_no_progress"]
+            args.w = report["write_clusters"]
+            args.r = report["write_report"]
+            args.e = report["export"]
+            args.y = report["display"]
+            args.sr = report["stats_rate"]
 
-    if args.p:
-        cProfile.run("""main(dataset=args.d,  algorithm=args.a,  verbose=args.v,  max_iters=args.x, write_clusters=args.w, tries=args.t, max_no_progress=args.c, export=args.e, alpha=args.m,display=args.y,write_report=args.r,stats_rate=args.sr)""", args.p)
+            main(dataset=args.d, 
+                 algorithm=args.a, 
+                 verbose=args.v, 
+                 max_iters=args.x,
+                 write_clusters=args.w,
+                 tries=args.t,
+                 max_no_progress=args.c,
+                 export=args.e,
+                 alpha=args.m,
+                 display=args.y,
+                 write_report=args.r,
+                 stats_rate=args.sr
+            )
     else:
-        main(dataset=args.d, 
-             algorithm=args.a, 
-             verbose=args.v, 
-             max_iters=args.x,
-             write_clusters=args.w,
-             tries=args.t,
-             max_no_progress=args.c,
-             export=args.e,
-             alpha=args.m,
-             display=args.y,
-             write_report=args.r,
-             stats_rate=args.sr
-        )
+        if args.c == 0:
+            args.c = int(args.x * 0.01)
+
+        if args.p:
+            cProfile.run("""main(dataset=args.d,  algorithm=args.a,  verbose=args.v,  max_iters=args.x, write_clusters=args.w, tries=args.t, max_no_progress=args.c, export=args.e, alpha=args.m,display=args.y,write_report=args.r,stats_rate=args.sr)""", args.p)
+        else:
+            main(dataset=args.d, 
+                 algorithm=args.a, 
+                 verbose=args.v, 
+                 max_iters=args.x,
+                 write_clusters=args.w,
+                 tries=args.t,
+                 max_no_progress=args.c,
+                 export=args.e,
+                 alpha=args.m,
+                 display=args.y,
+                 write_report=args.r,
+                 stats_rate=args.sr
+            )
