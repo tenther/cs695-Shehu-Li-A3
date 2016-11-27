@@ -20,9 +20,12 @@ import re
 import sys
 import time
 import json
+import MaintainModularity as MM
 
 VC = ig.VertexClustering
-
+float_type = np.float64
+f64_1 = float_type(1.0)
+f64_2 = float_type(2.0)
 comments_re = re.compile(r'#.*')
 
 class Timer(object):
@@ -45,31 +48,36 @@ class Timer(object):
     def total(self):
         return self.total_time
 
+
 class ModularityMaintainer(object):
     def __init__(self, graph, membership):
         # Code based on function igraph_modularity() in https://github.com/igraph/igraph/blob/master/src/community.c
         no_of_comms = max(membership) + 1
-        a           = np.zeros(no_of_comms)
-        e           = np.zeros(no_of_comms)
-        m           = np.zeros(no_of_comms)
+        a           = np.zeros(no_of_comms, dtype=float_type)
+        e           = np.zeros(no_of_comms, dtype=float_type)
+        m           = np.zeros(no_of_comms, dtype=float_type)
+
         modularity  = 0.0
         edges       = [(edge.source, edge.target) for edge in graph.es]
+
 
         for v1, v2 in edges:
             c1 = membership[v1]
             c2 = membership[v2]
             if (c1==c2):
-                e[c1] += 2.0
-            a[c1] += 1.0
-            a[c2] += 1.0
+                e[c1] += f64_2
+            a[c1] += f64_1
+            a[c2] += f64_1
 
         no_of_edges = len(graph.es)
+        f64_no_of_edges = float_type(no_of_edges)
         if no_of_edges > 0:
             for i in range(no_of_comms):
-                tmp = a[i]/2.0/no_of_edges
-                m[i] = e[i]/2.0/no_of_edges - tmp*tmp
+                tmp = a[i]/f64_2/f64_no_of_edges
+                m[i] = e[i]/f64_2/f64_no_of_edges - tmp*tmp
 
         modularity = m.sum()
+
         # make an adjacency list
         adj = defaultdict(set)
         for v1, v2 in edges:
@@ -102,14 +110,16 @@ class ModularityMaintainer(object):
         return self
 
     def move_community(self, v, new_community):
-        a = self.a
-        e = self.e
-        m = self.m
-        no_of_edges = self.no_of_edges
-        no_of_comms = self.no_of_comms
-        membership  = self.membership
-        adj         = self.adj
-        modularity  = self.modularity
+        a               = self.a
+        e               = self.e
+        m               = self.m
+        no_of_edges     = self.no_of_edges
+        f64_no_of_edges = float_type(no_of_edges)
+        no_of_comms     = self.no_of_comms
+        membership      = self.membership
+        adj             = self.adj
+        modularity      = self.modularity
+
 
         if no_of_edges == 0:
             return
@@ -123,6 +133,9 @@ class ModularityMaintainer(object):
         # Likewise, add these values in for the new community.
 
         c1 = membership[v]
+
+        if c1 == new_community:
+            raise Exception("Moving node to it's current community ({0} -> {1}) will likely break move_community".format(c1, new_community))
 
         # Store previous from and to communities, and the prior a,e,m values.
         try:
@@ -139,24 +152,21 @@ class ModularityMaintainer(object):
             pdb.set_trace()
             raise
             
-        if c1 == new_community:
-            raise Exception("Moving node to it's current community ({0} -> {1}) will likely break move_community".format(c1, new_community))
-
         for v2 in adj[v]:
             c2 = membership[v2]
             if c1 == c2:
-                e[c1] -= 2.0
+                e[c1] -= f64_2
             if c2 == new_community:
-                e[new_community] += 2.0
-            a[c1] -= 1.0
-            a[new_community] += 1.0
+                e[new_community] += f64_2
+            a[c1] -= f64_1
+            a[new_community] += f64_1
 
         # m array is used to track modularity component
         # of each community. Recalculate these for the
         # affected commununities.
         for i in [c1, new_community]:
-            tmp = a[i]/2.0/no_of_edges
-            m[i] = e[i]/2.0/no_of_edges - tmp*tmp
+            tmp = a[i]/f64_2/f64_no_of_edges
+            m[i] = e[i]/f64_2/f64_no_of_edges - tmp*tmp
 
         membership[v] = new_community
 
@@ -177,7 +187,6 @@ class ModularityMaintainer(object):
         self.modularity = self.m.sum()
         self.previous = None
 
-
 def load_tsv_edges(data_file_name, directed=None):
 
     V = set()
@@ -192,7 +201,8 @@ def load_tsv_edges(data_file_name, directed=None):
                 target = 'v' + target
                 V.add(source)
                 V.add(target)
-                E.add((source, target))
+                if (target, source) not in E:
+                    E.add((source, target))
 
     g = ig.Graph(directed=directed)
     g.add_vertices(sorted(list(V)))
@@ -350,9 +360,19 @@ def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, 
         if iteration % stats_rate == 0:
             modularity_vals_for_run.append(mm.modularity)
     
+    return_vc = VC(graph, normalize_membership(mm.membership))
     if verbose:
-        print("Finished greedy_clustering2. Clustered {0} communities into {1}.".format(len(mm.membership), len(set(mm.membership))))
-    return VC(graph, normalize_membership(mm.membership)), modularity_vals_for_run
+        print("""Finished greedy_clustering. 
+    Clustered {0} communities into {1}. 
+    ModularityMaintainer modularity = {2}. 
+    VertexClustering communities={3}, 
+    modularity={4}""".format(len(mm.membership), 
+                             len(set(mm.membership)), 
+                             mm.modularity,
+                             len(set(return_vc.membership)),
+                             return_vc.modularity))
+    return return_vc, modularity_vals_for_run
+
 
 def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=500, alpha=1000.0, population_size=None, stats_rate=100):
     # start with each vertex in its own commuanity
@@ -443,9 +463,18 @@ def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_
         if iteration % stats_rate == 0:
             modularity_vals_for_run.append(mm.modularity)
     
+    return_vc = VC(graph, normalize_membership(best_ever_membership))
     if verbose:
-        print("Finished mc_clustering. Clustered {0} communities into {1}.".format(len(best_ever_membership), len(set(best_ever_membership))))
-    return VC(graph, normalize_membership(best_ever_membership)), modularity_vals_for_run
+        print("""Finished mc_clustering. 
+    Clustered {0} communities into {1}. 
+    ModularityMaintainer modularity = {2}. 
+    VertexClustering communities={3}, 
+    modularity={4}""".format(len(best_ever_membership), 
+                             len(set(best_ever_membership)), 
+                             best_ever_modularity,
+                             len(set(return_vc.membership)),
+                             return_vc.modularity))
+    return return_vc, modularity_vals_for_run
 
 class EA_Mutator():
     def __init__(self, graph, membership):
