@@ -16,7 +16,6 @@ import os
 import pdb
 import random
 import re
-#import subprocess
 import sys
 import time
 import json
@@ -263,11 +262,14 @@ def do_clustering(graph,
     return best_cluster, stats
 
 def stats_from_modularity_data(data, stats_rate):
-    stats_prep = list(itertools.zip_longest(*data))
+    max_length = max([len(l) for l in data])
+    for line in data:
+        max_val = line[-1]
+        line += [max_val] * (max_length - len(line))
+    stats_prep = list(zip(*data))
     stats = []
     for i in range(len(stats_prep)):
-        clean_line = [x for x in stats_prep[i] if x is not None]
-        stats.append([i*stats_rate, max(clean_line), sum(clean_line) / len(clean_line)])
+        stats.append([i*stats_rate, max(stats_prep[i]), sum(stats_prep[i]) / len(stats_prep[i])])
     return stats
 
 def write_stats_to_file(stats, filename):
@@ -320,27 +322,15 @@ def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, 
         selected_vertex    = int(random.random() * num_vertices)
         selected_community = mm.membership[selected_vertex]
 
-        if iteration%1000 == 0:
-            non_empty_communities = list(partition_counts.keys())
-
-        # Pick random index 0 to num_vertices, or 0 to num_vertices - 1 if empty_partitions is empty
-        add_one            = len(empty_partitions) != 0
-
-        while True:
-            community_index = int(random.random() * (len(non_empty_communities)+int(add_one)))
-        
-            if community_index == len(non_empty_communities):
-                new_community = empty_partitions.pop()
-                partition_counts[new_community] = 0
-                break
-
-            new_community = non_empty_communities[community_index]
-            
+        p_new_com = 1/(len(partition_counts)+1)
+        r = random.uniform(0.0, 1.0)
+        if p_new_com > r and empty_partitions:
+            new_community = empty_partitions.pop()
+            partition_counts[new_community] = 0
+        else:
+            new_community = mm.membership[int(random.random() * float(num_vertices))]
             if new_community == selected_community:
                 continue
-
-            if new_community in partition_counts:
-                break
 
         mm.move_community(selected_vertex, new_community)
         delta = mm.modularity - previous_modularity
@@ -373,19 +363,14 @@ def greedy_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, 
                              return_vc.modularity))
     return return_vc, modularity_vals_for_run
 
-
 def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_no_progress=500, alpha=1000.0, population_size=None, stats_rate=100):
     # start with each vertex in its own commuanity
     mm = ModularityMaintainer(graph, [i for i, _ in enumerate(graph.vs)])
     modularity_vals_for_run = []
 
-    partition_vertexes = defaultdict(set)
+    partition_counts = defaultdict(int)
     for i, p in enumerate(mm.membership):
-        partition_vertexes[p].add(i)
-
-    partition_counts = dict()
-    for i, s in partition_vertexes.items():
-        partition_counts[i] = len(s)
+        partition_counts[p] = partition_counts[p] + 1
 
     previous_modularity = mm.modularity
     no_progress_counter = 0
@@ -402,29 +387,15 @@ def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_
         selected_vertex    = int(random.random() * num_vertices)
         selected_community = mm.membership[selected_vertex]
         
-        # Only recalculate new communities to pick from periodically
-        if iteration%1000 == 0:
-            non_empty_communities = list(partition_counts.keys())
-        # Pick random index 0 to num_vertices, or 0 to num_vertices - 1 if empty_partitions is empty
-        add_one            = len(empty_partitions) != 0
-
-        # Since we're leaving empty communities in non_empty_communities temporarily, we have to do
-        # a little more work to make sure we get a valid pick.
-        while True:
-            community_index = int(random.random() * (len(non_empty_communities)+int(add_one)))
-
-            if community_index == len(non_empty_communities):
-                new_community = empty_partitions.pop()
-                partition_counts[new_community] = 0
-                break
-
-            new_community = non_empty_communities[community_index]
-            
+        p_new_com = 1/(len(partition_counts)+1)
+        r = random.uniform(0.0, 1.0)
+        if p_new_com > r and empty_partitions:
+            new_community = empty_partitions.pop()
+            partition_counts[new_community] = 0
+        else:
+            new_community = mm.membership[int(random.random() * float(num_vertices))]
             if new_community == selected_community:
                 continue
-
-            if new_community in partition_counts:
-                break
                 
         mm.move_community(selected_vertex, new_community)
         delta = mm.modularity - previous_modularity
@@ -498,25 +469,27 @@ class EA_Mutator():
         for _ in range(n_mutations):
             selected_vertex    = int(random.random() * self.num_vertices)
             selected_community = self.mm.membership[selected_vertex]
-            new_communities    = [c for c, n in self.partition_counts.items() if n and c != selected_community]
 
-            # Pick random index 0 to num_vertices, or 0 to num_vertices - 1 if empty_partitions is empty
-            add_one            = len(self.empty_partitions) != 0
-            community_index    = int(random.random() * (len(new_communities)+int(add_one)))
+            while True:
+                p_new_com = 1/(len(self.partition_counts)+1)
+                r = random.uniform(0.0, 1.0)
+                if p_new_com > r and self.empty_partitions:
+                    new_community = self.empty_partitions.pop()
+                    self.partition_counts[new_community] = 0
+                else:
+                    community_index    = int(random.random() * (len(self.mm.membership)))
+                    new_community = self.mm.membership[community_index]
 
-            if community_index == len(new_communities):
-                new_community = self.empty_partitions.pop()
-                self.partition_counts[new_community] = 0
-            else:
-                new_community = new_communities[community_index]
+                if new_community == selected_community:
+                    continue
+                self.mm.move_community(selected_vertex, new_community)
 
-            self.mm.move_community(selected_vertex, new_community)
-
-            self.partition_counts[selected_community] -= 1
-            if not self.partition_counts[selected_community]:
-                del(self.partition_counts[selected_community])
-                self.empty_partitions.append(selected_community)
-            self.partition_counts[new_community] += 1
+                self.partition_counts[selected_community] -= 1
+                if not self.partition_counts[selected_community]:
+                    del(self.partition_counts[selected_community])
+                    self.empty_partitions.append(selected_community)
+                self.partition_counts[new_community] += 1
+                break
 
 def do_ea_work(m_target, m_source):
     m_target.copy(m_source)
@@ -698,7 +671,6 @@ def main(dataset=None,
                                      ['community_file', community_file_name],
                                      ['modularity', clusters[data][alg][0].modularity],
                                      ['elapsed_time', dataset_algorithm_time[data][alg]],
-#                                     ['git_hash', str(subprocess.run(["git", "ls-files", "-s", sys.argv[0]], stdout=subprocess.PIPE).stdout.strip().split()[1])],
                                      ['stats_rate', stats_rate],
                                      ['cluster_summary', cluster.summary()],
                     ]
