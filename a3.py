@@ -19,7 +19,6 @@ import re
 import sys
 import time
 import json
-import MaintainModularity as MM
 
 VC = ig.VertexClustering
 float_type = np.float64
