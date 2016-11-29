@@ -550,6 +550,7 @@ def main(dataset=None,
          display=False,
          write_report=False,
          stats_rate=100,
+         do_dendro=False,
          ):
 
     for d in ['reports', 'gephi_exports']:
@@ -581,9 +582,9 @@ def main(dataset=None,
     }
 
     algorithm_func = {
-        'betweenness': lambda g, kw: (g.community_edge_betweenness().as_clustering(), None),
+        'betweenness': lambda g, kw: g.community_edge_betweenness(),
         'eigenvector': lambda g, kw: (g.community_leading_eigenvector(), None),
-        'walktrap':    lambda g, kw: (g.community_walktrap().as_clustering(), None),
+        'walktrap':    lambda g, kw: g.community_walktrap(),
         'greedy':      lambda g, kw: do_clustering(g, greedy_clustering, **kw),
         'mc-cluster':  lambda g, kw: do_clustering(g, mc_clustering, **kw),
         'ea-cluster':  lambda g, kw: do_clustering(g, ea_clustering, tries=1, max_children=1, **kw),
@@ -609,8 +610,17 @@ def main(dataset=None,
             print("Doing {0} {1}".format(data, alg))
             kw = dataset_algorithm_params[data][alg]
             t0 = time.time()
-            clusters[data][alg] = func(graphs[data], kw)
+            results = func(graphs[data], kw)
+            if alg in ('betweenness', 'walktrap'):
+                clusters[data][alg] = (results.as_clustering(), None)
+                if do_dendro:
+                    file_name = 'images/' + dataset + '_' + alg + '_dendrogram.png'
+                    print("Writing {0}".format(file_name))
+                    ig.plot(results, file_name)
+            else:
+                clusters[data][alg] = results
             dataset_algorithm_time[data][alg] = time.time() - t0
+                
 
     for data, graph in graphs.items():
         print("Graph summary for dataset {0}: {1}".format(data, graph.summary()))
@@ -738,6 +748,10 @@ if __name__ == '__main__':
                         action='store_true',
                         default=False,
                         help='Write statistics and filenames to report file.')
+    parser.add_argument('-dro',
+                        action='store_true',
+                        default=False,
+                        help='Write dendrogram file.')
     parser.add_argument('-sr',
                         type=int,
                         help='Rate at which to store modularity statistics',
@@ -776,7 +790,8 @@ if __name__ == '__main__':
                  alpha=args.m,
                  display=args.y,
                  write_report=args.r,
-                 stats_rate=args.sr
+                 stats_rate=args.sr,
+                 do_dendro=args.dro,
             )
     else:
         if args.c == 0:
@@ -796,5 +811,6 @@ if __name__ == '__main__':
                  alpha=args.m,
                  display=args.y,
                  write_report=args.r,
-                 stats_rate=args.sr
+                 stats_rate=args.sr,
+                 do_dendro=args.dro,
             )
