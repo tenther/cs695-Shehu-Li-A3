@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+import re
 import a3
 import argparse
 import igraph as ig
@@ -7,7 +8,7 @@ import pdb
 
 dataset_igraph_layout = {
     'facebook':  'lgl',
-    'wikivote':  'grid',
+    'wikivote':  'lgl',
     'collab':    'lgl',
     'karate':    'kk',
     'test':      'kk',
@@ -23,7 +24,7 @@ def load_membership(graph, membership_file_name):
             membership[int(v)] = int(c)
     return membership
 
-def main(graph_file_name, membership_file_name, directed, labels=False, layout_name='kk'):
+def main(graph_file_name, membership_file_name, directed, labels=False, layout_name='kk', report_file=None):
 #    pdb.set_trace()
     g          = a3.load_tsv_edges(graph_file_name, directed=directed)
     membership = load_membership(g, membership_file_name)
@@ -31,7 +32,7 @@ def main(graph_file_name, membership_file_name, directed, labels=False, layout_n
     if labels:
         visual_style['vertex_label']=g.vs["name"]
         visual_style['label_dist']=1
-    visual_style['bbox']=(600,600)
+    visual_style['bbox']=(1200,1200)
     visual_style['margin']=50
 
     layout = g.layout(layout_name)
@@ -41,7 +42,12 @@ def main(graph_file_name, membership_file_name, directed, labels=False, layout_n
                        'black', 'brown', 'gray',]
 
     visual_style['vertex_color']=[community_color[i%(len(community_color))] for i in membership]
-    ig.plot(g, layout=layout, **visual_style)
+    if report_file:
+        file_name = re.sub(r'.*/([^/]+)_\d{2}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_report.json$', r'images/\1_graph.png', report_file)
+        ig.plot(g, file_name,  layout=layout, **visual_style)
+    else:
+        ig.plot(g, layout=layout, **visual_style)
+
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
@@ -67,6 +73,6 @@ if __name__=='__main__':
     if args.r:
         with open(args.r) as report_file:
             report = json.loads(report_file.read())
-            main(report["graph_data"], report["community_file"], False, args.l, dataset_igraph_layout[report["dataset"]])
+            main(report["graph_data"], report["community_file"], False, args.l, dataset_igraph_layout[report["dataset"]], args.r)
     else:
-        main(args.g, args.m, False, args.l, args.y)
+        main(args.g, args.m, False, args.l, args.y, report_file_name=None)
