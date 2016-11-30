@@ -403,7 +403,6 @@ def mc_clustering(graph, max_iterations=5000, min_delta=0.0, verbose=False, max_
             accept_change = True
         else:
             p = math.exp(delta / alpha * iteration / max_iterations)
-#            p = 1/(float(iteration)/1000.0 + 1.0)
             r = random.uniform(0.0, 1.0)
             if p > r:
                 accept_change = True
@@ -616,7 +615,7 @@ def main(dataset=None,
                 if do_dendro:
                     file_name = 'images/' + dataset + '_' + alg + '_dendrogram.png'
                     print("Writing {0}".format(file_name))
-                    ig.plot(results, file_name, bbox=(6400*2, 6400*2))
+                    ig.plot(results, file_name, bbox=(1200, 1200))
             else:
                 clusters[data][alg] = results
             dataset_algorithm_time[data][alg] = time.time() - t0

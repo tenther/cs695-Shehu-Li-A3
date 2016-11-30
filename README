@@ -1,0 +1,62 @@
+Our program is written in Python (3). If you run it as an executable it
+will assume your Python is located in /usr/bin/python3. If you want to
+run it with another version of Python in your path (like
+/usr/local/bin/python3) then run "python3 a3.py" (this is all
+basic, but we're just being complete.)
+
+We tested this program on Ubuntu 16.04 with Python version 3.5.2 and
+Windows 10 with Python version 3.4.
+
+The program uses the Python modules igraph and numpy.
+
+It uses the edge files from the three datasets and expects the files
+to be in the following locations relative to the directory you
+are running in:
+
+facebook: data/egonets-Facebook/facebook_combined.txt
+wikivote: data/wiki-Vote/wiki-Vote.txt
+collab:   data/ca-GrQc/ca-GrQc.txt
+
+If you use the -dro (create dendrogram option) the program expects an images directory to exist.
+If you use -r (write report and modularity stats) or -w (write cluster information), the program
+expect a reports directory to exist.
+If you use -e (create Gephi files) the program expects a gephi_exports directory to exist. 
+
+The program takes several arguments 
+
+usage: a3.py [-h] [-d {facebook,wikivote,collab,test,karate}]
+             [-a {eigenvector,walktrap,greedy,betweenness,mc-cluster,ea-cluster}]
+             [-v] [-t T] [-x X] [-m M] [-c C] [-w] [-e] [-y] [-p P] [-r]
+             [-dro] [-sr SR] [-z Z]
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -d {facebook,wikivote,collab,test,karate}
+                        Dataset to process
+  -a {eigenvector,walktrap,greedy,betweenness,mc-cluster,ea-cluster}
+                        Algorithm to run on dataset
+  -v                    Verbose mode
+  -t T                  Number of tries to run with greedy, and mc-cluster
+                        algorithms. Population size with ea-cluster algorithm
+  -x X                  max iterations to run
+  -m M                  alpha for mc_cluster algorithm
+  -c C                  max iterations with no change before assuming
+                        converged
+  -w                    write created clusters to disk
+  -e                    export Gephi spreadsheet csv file
+  -y                    Display graph results visually in igraph.
+  -p P                  Run cProfile on main() function and store results in
+                        file provided.
+  -r                    Write statistics and filenames to report file.
+  -dro                  Write dendrogram file.
+  -sr SR                Rate at which to store modularity statistics
+  -z Z                  Run a test whose parameters are given in the specified
+                        json file (with same field format as an output report.
+
+Division of labor:
+
+We both worked equally on the assignment--Paul's emphasis was more on
+coding and performance tweaking, and Katie's was on coding, making
+Gephi images, and writing the final report.
+
+
